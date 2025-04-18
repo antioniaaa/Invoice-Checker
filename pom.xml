@@ -14,6 +14,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <jackson.version>2.13.3</jackson.version> <!-- Oder aktuellste Jackson Version -->
         <poi.version>5.2.3</poi.version> <!-- Aktuellste Apache POI Version -->
+        <pdfbox.version>2.0.30</pdfbox.version> <!-- Oder aktuellste PDFBox 2.x Version --> <!-- HINWEIS: PDFBox 3.x hat API Änderungen, 2.x ist oft einfacher zu integrieren -->
     </properties>
 
     <dependencies>
@@ -41,7 +42,6 @@
             <version>${poi.version}</version>
         </dependency>
 
-
         <!-- Optional: SLF4J für Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -54,7 +54,28 @@
             <version>1.7.36</version>
             <scope>runtime</scope>
         </dependency>
-
+<!-- Apache PDFBox für PDF Rendering -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
+        <!-- Optional: Bessere Bildunterstützung für PDFBox Rendering -->
+         <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox-tools</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
+         <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>jbig2-imageio</artifactId>
+            <version>3.0.4</version> <!-- Passende Version für jbig2 -->
+        </dependency>
+         <dependency>
+            <groupId>com.github.jai-imageio</groupId>
+            <artifactId>jai-imageio-core</artifactId>
+            <version>1.4.0</version>
+        </dependency>
     </dependencies>
 
     <build>

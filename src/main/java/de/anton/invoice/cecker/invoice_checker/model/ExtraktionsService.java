@@ -85,6 +85,12 @@ public class ExtraktionsService {
                 .registerModule(new JavaTimeModule());
     }
 
+ // Überladene Methode für Kompatibilität (optional, aber nützlich):
+    public PdfDokument extrahiereTabellenAusPdf(Path pdfPfad, Map<String, String> parameter) {
+         // Ruft die Hauptmethode ohne Bereiche und mit 'all' Seiten auf
+         return extrahiereTabellenAusPdf(pdfPfad, parameter, null, "all");
+    }
+    
     /**
      * Führt das Python-Skript mit spezifischen Parametern aus, um Tabellen
      * aus der angegebenen PDF-Datei zu extrahieren. Liest stdout (für JSON)
@@ -95,7 +101,7 @@ public class ExtraktionsService {
      *                  Werte sollten Strings sein. Kann null sein.
      * @return Ein PdfDokument-Objekt, das die extrahierten Daten oder eine Fehlermeldung enthält.
      */
-    public PdfDokument extrahiereTabellenAusPdf(Path pdfPfad, Map<String, String> parameter) {
+    public PdfDokument extrahiereTabellenAusPdf(Path pdfPfad, Map<String, String> parameter, List<String> tableAreas, String pageString) {
         log.info("Starte Extraktion für: {} mit Parametern: {}", pdfPfad, parameter);
         // PdfDokument-Objekt für potenzielle Fehler vorbereiten
         PdfDokument fehlerDok = new PdfDokument();
