@@ -23,6 +23,9 @@ import java.util.Objects; // Import für Objects.equals
 import java.util.Optional;
 
 
+import java.util.Set; // Import für Set (für Seitenzahlen)
+
+
 /**
 * Das Kernmodell der Anwendung. Verwaltet die Liste der verarbeiteten PDF-Dokumente,
 * die Auswahl des aktuell angezeigten Dokuments und der Tabelle, und delegiert
@@ -176,11 +179,11 @@ public class AnwendungsModell {
 
  /**
   * Lädt und verarbeitet PDFs asynchron mit einer spezifischen Konfiguration (oder ohne).
-  * Diese Methode wird jetzt intern aufgerufen und kann auch vom Controller für Neuverarbeitung genutzt werden.
+  * Orchestriert die Extraktion basierend auf globalen oder seitenspezifischen Bereichen.
   *
   * @param pdfPfade Liste der PDF-Pfade.
   * @param parameter Extraktionsparameter (Flavor, RowTol etc.).
-  * @param config Die zu verwendende ExtractionConfiguration (kann null sein für keine Bereichseinschränkung).
+  * @param config Die zu verwendende ExtractionConfiguration (kann null sein).
   * @param onSingleDocumentProcessedForStatus Callback für Status.
   */
  public void ladeUndVerarbeitePdfsMitKonfiguration(List<Path> pdfPfade, Map<String, String> parameter, ExtractionConfiguration config, Consumer<PdfDokument> onSingleDocumentProcessedForStatus) {
@@ -190,100 +193,163 @@ public class AnwendungsModell {
      for (Path pdfPfad : pdfPfade) {
          final Map<String, String> aktuelleParameter = (parameter != null) ? new HashMap<>(parameter) : Collections.emptyMap();
          final ExtractionConfiguration aktuelleConfig = config; // Finale Referenz für Lambda
-         final Path aktuellerPdfPfad = pdfPfad; // Finale Referenz für Lambda
+         final Path aktuellerPdfPfad = pdfPfad;
 
          log.info("Reiche PDF zur Verarbeitung ein: {}", aktuellerPdfPfad);
 
          executorService.submit(() -> { // Starte Verarbeitung im Thread-Pool
-             PdfDokument verarbeitetesDoc = null;
-             boolean listUpdated = false; // Flag, ob die Liste geändert wurde
+             PdfDokument finalesErgebnisDokument = null; // Das Dokument, das am Ende hinzugefügt wird
+             boolean listUpdated = false;
+             StringBuilder gesammelteFehler = new StringBuilder(); // Sammelt Fehler von einzelnen Seiten
+
              try {
-                 // --- Bereiche und Seite(n) basierend auf Konfiguration ermitteln ---
-                 String pageStringToProcess = "all"; // Default: Alle Seiten
-                 List<String> areasForPython = null; // Default: Keine Bereiche
+                 // Erstelle ein Basis-Dokumentobjekt für Metadaten
+                 finalesErgebnisDokument = new PdfDokument();
+                 finalesErgebnisDokument.setSourcePdf(aktuellerPdfPfad.getFileName().toString());
+                 finalesErgebnisDokument.setFullPath(aktuellerPdfPfad.toString());
 
-                 if (aktuelleConfig != null) {
-                     if (!aktuelleConfig.isUsePageSpecificAreas()) { // Globale Bereiche verwenden
-                         List<AreaDefinition> globalAreas = aktuelleConfig.getGlobalAreasList();
-                         if (globalAreas != null && !globalAreas.isEmpty()) {
-                             areasForPython = globalAreas.stream().map(AreaDefinition::toCamelotString).collect(Collectors.toList());
-                             pageStringToProcess = "all"; // Globale gelten für alle Seiten
-                             log.debug("Verwende globale Bereiche für alle Seiten.");
-                         }
-                     } else { // Seitenspezifische Bereiche verwenden
-                          // Vereinfachung: Verarbeite nur Seite 1 mit ihren Bereichen
-                          // TODO: Dies erweitern, um alle Seiten mit Bereichen zu verarbeiten
-                          areasForPython = aktuelleConfig.getAreasForCamelot(1); // Bereiche für Seite 1 (1-basiert) holen
-                          pageStringToProcess = "1"; // Nur Seite 1 verarbeiten
-                          if (areasForPython != null && !areasForPython.isEmpty()) {
-                              log.debug("Verwende seitenspezifische Bereiche nur für Seite 1.");
-                          } else {
-                              log.debug("Seitenspezifischer Modus, aber keine Bereiche für Seite 1 definiert. Extrahiere Seite 1 ohne Bereiche.");
-                              areasForPython = null; // Keine Bereiche senden
-                          }
+                 // --- Entscheide Verarbeitungsstrategie basierend auf Konfig ---
+                 if (aktuelleConfig == null) {
+                     // Fall 1: Keine Konfiguration -> Extrahiere alle Seiten ohne Bereiche
+                     log.debug("--> Keine aktive Konfiguration, extrahiere alle Seiten ohne Bereichseinschränkung.");
+                     PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(
+                         aktuellerPdfPfad, aktuelleParameter, null, "all");
+                     if (ergebnis != null) {
+                         finalesErgebnisDokument.addTables(ergebnis.getTables());
+                         finalesErgebnisDokument.setAbrechnungszeitraumStartStr(ergebnis.getAbrechnungszeitraumStartStr());
+                         finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(ergebnis.getAbrechnungszeitraumEndeStr());
+                         if (ergebnis.getError() != null) gesammelteFehler.append(ergebnis.getError()).append("; ");
+                     } else { gesammelteFehler.append("Extraktion lieferte null zurück; "); }
+
+                 } else if (!aktuelleConfig.isUsePageSpecificAreas()) {
+                     // Fall 2: Globale Bereiche sind aktiv
+                     List<AreaDefinition> globalAreas = aktuelleConfig.getGlobalAreasList();
+                     List<String> areasForPython = null;
+                     if (globalAreas != null && !globalAreas.isEmpty()) {
+                         areasForPython = globalAreas.stream().map(AreaDefinition::toCamelotString).collect(Collectors.toList());
+                         log.info("--> Verwende {} globale Bereiche für alle Seiten.", areasForPython.size());
+                     } else {
+                         log.debug("--> Globaler Modus aktiv, aber keine globalen Bereiche definiert. Extrahiere ohne Bereiche.");
                      }
+                     PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(
+                         aktuellerPdfPfad, aktuelleParameter, areasForPython, "all");
+                     if (ergebnis != null) {
+                          finalesErgebnisDokument.addTables(ergebnis.getTables());
+                          finalesErgebnisDokument.setAbrechnungszeitraumStartStr(ergebnis.getAbrechnungszeitraumStartStr());
+                          finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(ergebnis.getAbrechnungszeitraumEndeStr());
+                          if (ergebnis.getError() != null) gesammelteFehler.append(ergebnis.getError()).append("; ");
+                     } else { gesammelteFehler.append("Extraktion (global) lieferte null zurück; "); }
+
                  } else {
-                      log.debug("Keine aktive Konfiguration, extrahiere alle Seiten ohne Bereichseinschränkung.");
+                     // Fall 3: Seitenspezifische Bereiche sind aktiv
+                     log.info("--> Seitenspezifischer Modus aktiv. Verarbeite Seiten mit definierten Bereichen.");
+                     Map<Integer, List<AreaDefinition>> seitenBereicheMap = aktuelleConfig.getPageSpecificAreasMap();
+                     if (seitenBereicheMap == null || seitenBereicheMap.isEmpty()) {
+                         // Fall 3a: Seitenspezifisch aktiv, aber keine Bereiche definiert
+                         log.warn("--> Seitenspezifischer Modus, aber KEINE Bereiche definiert. Extrahiere alle Seiten ohne Bereiche.");
+                         PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(
+                             aktuellerPdfPfad, aktuelleParameter, null, "all");
+                          if (ergebnis != null) {
+                              finalesErgebnisDokument.addTables(ergebnis.getTables());
+                              finalesErgebnisDokument.setAbrechnungszeitraumStartStr(ergebnis.getAbrechnungszeitraumStartStr());
+                              finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(ergebnis.getAbrechnungszeitraumEndeStr());
+                              if (ergebnis.getError() != null) gesammelteFehler.append(ergebnis.getError()).append("; ");
+                          } else { gesammelteFehler.append("Extraktion (Fallback ohne Bereiche) lieferte null zurück; "); }
+                     } else {
+                         // Fall 3b: Seitenspezifisch aktiv UND Bereiche definiert -> Iteriere über Seiten
+                         Set<Integer> seitenMitBereichen = seitenBereicheMap.keySet();
+                          log.info("--> Verarbeite spezifische Seiten: {}", seitenMitBereichen);
+                         List<PdfDokument> teilErgebnisse = new ArrayList<>();
+                         boolean firstPageProcessed = false; // Um Datum nur einmal zu setzen
+
+                         for (Integer pageNum : seitenMitBereichen) { // Iteriere über definierte Seiten (1-basiert)
+                             List<AreaDefinition> areasForPage = seitenBereicheMap.get(pageNum);
+                             if (areasForPage == null || areasForPage.isEmpty()) continue; // Sollte nicht vorkommen, aber sicher ist sicher
+
+                             List<String> areasForPythonPage = areasForPage.stream()
+                                                                 .map(AreaDefinition::toCamelotString)
+                                                                 .collect(Collectors.toList());
+                             log.info("----> Verarbeite Seite {} mit {} Bereichen...", pageNum, areasForPythonPage.size());
+
+                             // Rufe Service für DIESE EINE Seite mit IHREN Bereichen auf
+                             PdfDokument seitenErgebnis = extraktionsService.extrahiereTabellenAusPdf(
+                                 aktuellerPdfPfad,
+                                 aktuelleParameter,
+                                 areasForPythonPage, // Bereiche nur für diese Seite
+                                 String.valueOf(pageNum) // Nur diese Seite verarbeiten
+                             );
+
+                             if (seitenErgebnis != null) {
+                                  teilErgebnisse.add(seitenErgebnis);
+                                  // Nimm Datum vom Ergebnis der ersten erfolgreich verarbeiteten Seite
+                                  if (!firstPageProcessed && seitenErgebnis.getAbrechnungszeitraumStartStr() != null) {
+                                       finalesErgebnisDokument.setAbrechnungszeitraumStartStr(seitenErgebnis.getAbrechnungszeitraumStartStr());
+                                       finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(seitenErgebnis.getAbrechnungszeitraumEndeStr());
+                                       firstPageProcessed = true;
+                                  }
+                                  // Sammle Fehler von einzelnen Seiten
+                                  if (seitenErgebnis.getError() != null) {
+                                       gesammelteFehler.append("Seite ").append(pageNum).append(": ").append(seitenErgebnis.getError()).append("; ");
+                                       log.warn("Fehler bei Extraktion von Seite {}: {}", pageNum, seitenErgebnis.getError());
+                                  }
+                             } else {
+                                  log.error("Extraktion für Seite {} lieferte null zurück.", pageNum);
+                                  gesammelteFehler.append("Seite ").append(pageNum).append(": Extraktion fehlgeschlagen (null); ");
+                             }
+                         } // Ende Schleife über Seiten
+
+                         // Füge alle gefundenen Tabellen aus den Teilergebnissen zusammen
+                         log.info("Führe Ergebnisse von {} verarbeiteten Seiten zusammen.", teilErgebnisse.size());
+                         for(PdfDokument teilErgebnis : teilErgebnisse) {
+                             if (teilErgebnis.getTables() != null) {
+                                  finalesErgebnisDokument.addTables(teilErgebnis.getTables());
+                             }
+                         }
+                         log.info("Zusammengeführtes Ergebnis enthält {} Tabellen.", finalesErgebnisDokument.getTables().size());
+                     }
+                 } // Ende Fallunterscheidung Konfiguration
+
+                 // Setze gesammelte Fehler (falls vorhanden) im finalen Dokument
+                 if (gesammelteFehler.length() > 0) {
+                     finalesErgebnisDokument.setError(gesammelteFehler.toString().trim());
                  }
-                 // --- Ende Bereichsermittlung ---
 
-
-                 // Rufe Extraktionsservice mit allen 4 Parametern auf
-                 verarbeitetesDoc = extraktionsService.extrahiereTabellenAusPdf(
-                     aktuellerPdfPfad,     // 1. PDF Pfad
-                     aktuelleParameter,    // 2. Parameter (Flavor, RowTol)
-                     areasForPython,       // 3. Bereiche (Liste von Strings oder null)
-                     pageStringToProcess   // 4. Seite(n) (String "all", "1", etc.)
-                 );
-
-                 // --- Liste aktualisieren und Event feuern ---
+                 // --- Liste aktualisieren (mit dem finalen Ergebnis) ---
                   synchronized (dokumente) {
-                      final String pfadStr = aktuellerPdfPfad.toString(); // Finale Variable für Lambda
-                      // Entferne alten Eintrag, falls vorhanden
+                      final String pfadStr = aktuellerPdfPfad.toString();
                       dokumente.removeIf(d -> d.getFullPath() != null && d.getFullPath().equals(pfadStr));
-                      // Füge neues/aktualisiertes Dokument hinzu
-                      dokumente.add(verarbeitetesDoc);
-                      // Halte die Liste sortiert
+                      dokumente.add(finalesErgebnisDokument);
                       Collections.sort(dokumente);
-                      listUpdated = true; // Markiere, dass die Liste geändert wurde
+                      listUpdated = true;
                   }
-                  // Rufe den optionalen Callback für Status-Updates auf
+                  // Callback für Status-Update aufrufen
                   if (onSingleDocumentProcessedForStatus != null) {
-                      onSingleDocumentProcessedForStatus.accept(verarbeitetesDoc);
+                      onSingleDocumentProcessedForStatus.accept(finalesErgebnisDokument);
                   }
 
              } catch (Exception e) {
-                 // --- Fehlerbehandlung bei Extraktion ---
-                 log.error("Fehler bei der Verarbeitung von PDF im Hintergrund-Thread: {}", aktuellerPdfPfad, e);
-                 // Erstelle ein Fehler-Dokumentobjekt
-                 verarbeitetesDoc = new PdfDokument();
-                 verarbeitetesDoc.setSourcePdf(aktuellerPdfPfad.getFileName().toString());
-                 verarbeitetesDoc.setFullPath(aktuellerPdfPfad.toString());
-                 verarbeitetesDoc.setError("Fehler während der Verarbeitung: " + e.getMessage());
-                 // Füge das Fehler-Dokument zur Liste hinzu (synchronisiert)
-                 synchronized (dokumente) {
-                     final String pfadStr = aktuellerPdfPfad.toString(); // Finale Variable für Lambda
-                     // Entferne alten Eintrag, falls vorhanden
-                     dokumente.removeIf(d -> d.getFullPath() != null && d.getFullPath().equals(pfadStr));
-                     // Füge Fehlerdokument hinzu
-                     dokumente.add(verarbeitetesDoc);
-                     // Halte die Liste sortiert
-                     Collections.sort(dokumente);
-                     listUpdated = true; // Liste wurde geändert (Fehlereintrag hinzugefügt)
+                 // Fange unerwartete Fehler während der Orchestrierung
+                 log.error("Unerwarteter Fehler bei der Verarbeitung von PDF {}: {}", aktuellerPdfPfad, e.getMessage(), e);
+                 if (finalesErgebnisDokument == null) { // Erstelle Fehlerobjekt, falls noch nicht geschehen
+                      finalesErgebnisDokument = new PdfDokument();
+                      finalesErgebnisDokument.setSourcePdf(aktuellerPdfPfad.getFileName().toString());
+                      finalesErgebnisDokument.setFullPath(aktuellerPdfPfad.toString());
                  }
-                  // Rufe den optionalen Callback für Status-Updates auf
-                 if (onSingleDocumentProcessedForStatus != null) {
-                      onSingleDocumentProcessedForStatus.accept(verarbeitetesDoc);
+                 finalesErgebnisDokument.setError("Interner Orchestrierungsfehler: " + e.getMessage());
+                 // Füge Fehlerdokument zur Liste hinzu
+                 synchronized(dokumente){
+                      final String pfadStr = aktuellerPdfPfad.toString();
+                      dokumente.removeIf(d -> d.getFullPath() != null && d.getFullPath().equals(pfadStr));
+                      dokumente.add(finalesErgebnisDokument);
+                      Collections.sort(dokumente);
+                      listUpdated = true;
                  }
+                 if(onSingleDocumentProcessedForStatus!=null){ onSingleDocumentProcessedForStatus.accept(finalesErgebnisDokument); }
              } finally {
                   // Feuere das Update-Event für die View, wenn die Liste geändert wurde
                   if (listUpdated) {
                        log.debug("Feuere PropertyChangeEvent '{}'", DOCUMENTS_UPDATED_PROPERTY);
-                       // Feuere das Event im Event Dispatch Thread (EDT)
-                       SwingUtilities.invokeLater(() -> {
-                             // Sende eine (neue) Kopie der aktuellen Liste als neuen Wert
-                             support.firePropertyChange(DOCUMENTS_UPDATED_PROPERTY, null, getDokumente());
-                       });
+                       SwingUtilities.invokeLater(() -> support.firePropertyChange(DOCUMENTS_UPDATED_PROPERTY, null, getDokumente()));
                   }
              }
          }); // Ende des Runnables für den ExecutorService
@@ -291,23 +357,8 @@ public class AnwendungsModell {
  }
 
 
- // --- Excel Export und Shutdown ---
- public void exportiereAlleNachExcel(Path zielPfad) throws IOException {
-     excelExportService.exportiereNachExcel(getDokumente(), zielPfad);
- }
+ // --- Excel Export und Shutdown (unverändert) ---
+ public void exportiereAlleNachExcel(Path zielPfad) throws IOException { excelExportService.exportiereNachExcel(getDokumente(), zielPfad); }
+ public void shutdownExecutor() { log.info("Shutdown executor."); executorService.shutdown(); try { if (!executorService.awaitTermination(5,TimeUnit.SECONDS)) executorService.shutdownNow(); } catch (InterruptedException e) { executorService.shutdownNow(); Thread.currentThread().interrupt(); } }
 
- public void shutdownExecutor() {
-      log.info("Fahre Executor Service herunter.");
-     executorService.shutdown();
-     try {
-         if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-             executorService.shutdownNow();
-              log.warn("Executor Service wurde zwangsweise heruntergefahren.");
-         }
-     } catch (InterruptedException e) {
-         executorService.shutdownNow();
-          log.error("Warten auf Executor Service Beendigung unterbrochen.", e);
-         Thread.currentThread().interrupt();
-     }
- }
 }
