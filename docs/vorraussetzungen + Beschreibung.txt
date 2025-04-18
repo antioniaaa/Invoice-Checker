@@ -1,0 +1,142 @@
+1. Software-Installation:
+Java Development Kit (JDK):
+Version: Java 11 oder höher (wie in der pom.xml festgelegt).
+Zweck: Wird benötigt, um den Java-Code zu kompilieren (javac) und die Anwendung auszuführen (java). Ein JDK enthält üblicherweise auch die Laufzeitumgebung (JRE).
+Prüfung: Öffnen Sie eine Kommandozeile/Terminal und geben Sie java -version und javac -version ein. Es sollte eine Version 11 oder höher angezeigt werden.
+Konfiguration: Der JAVA_HOME-Umgebungsvariable sollte gesetzt sein und das bin-Verzeichnis des JDK sollte im Systempfad (PATH) enthalten sein.
+Apache Maven:
+Version: Eine aktuelle Version (z.B. 3.6.x oder neuer).
+Zweck: Build-Werkzeug zum Kompilieren des Codes, Verwalten der Java-Abhängigkeiten (wie Jackson, Apache POI, SLF4j) und Erstellen des ausführbaren JAR-Archivs.
+Prüfung: Öffnen Sie eine Kommandozeile/Terminal und geben Sie mvn -version ein.
+Konfiguration: Das bin-Verzeichnis von Maven muss im Systempfad (PATH) enthalten sein.
+Internetverbindung: Wird beim ersten Build (mvn clean install) benötigt, um die Abhängigkeiten aus dem Internet herunterzuladen.
+Python:
+Version: Python 3.7 oder höher wird empfohlen (Camelot funktioniert oft auch mit 3.6, aber neuere Versionen sind besser).
+Zweck: Wird benötigt, um das Python-Skript (tabellen_extraktor.py) auszuführen, das die eigentliche PDF-Analyse und Tabellenextraktion durchführt.
+Prüfung: Öffnen Sie eine Kommandozeile/Terminal und geben Sie python --version oder python3 --version ein.
+Konfiguration: Der Pfad zur Python-Installation muss im Systempfad (PATH) enthalten sein, sodass der Befehl python oder python3 (je nachdem, was in ExtraktionsService.java konfiguriert ist) direkt aufgerufen werden kann. Das Paketinstallationsprogramm pip muss ebenfalls verfügbar sein (pip --version oder pip3 --version).
+Ghostscript:
+Zweck: Dies ist eine externe Software (keine Python-Bibliothek!), die von Camelot im Hintergrund benötigt wird, um mit PDFs zu arbeiten. Dies ist eine häufige Fehlerquelle, wenn es fehlt.
+Installation: Muss separat für Ihr Betriebssystem installiert werden:
+Windows: Laden Sie den Installer von der offiziellen Ghostscript-Website herunter und installieren Sie ihn. Stellen Sie sicher, dass die ausführbare Datei (gswin64c.exe o.ä.) im Systempfad (PATH) ist oder Camelot sie finden kann.
+Linux (Debian/Ubuntu): sudo apt-get update && sudo apt-get install ghostscript
+macOS (mit Homebrew): brew install ghostscript
+Prüfung: Öffnen Sie eine Kommandozeile/Terminal und geben Sie gs --version (Linux/Mac) oder gswin64c --version (Windows, Name kann leicht variieren) ein.
+(Optional, aber empfohlen) Tkinter/Tcl-tk:
+Zweck: Einige Camelot-Funktionen oder Abhängigkeiten (wie Matplotlib für Plots, falls Sie diese später nutzen) benötigen die Tkinter-Bibliothek. Es ist sicherer, sie installiert zu haben.
+Installation:
+Linux (Debian/Ubuntu): sudo apt-get install python3-tk
+macOS (mit Homebrew): brew install tcl-tk
+Windows: Ist normalerweise bei der Standard-Python-Installation dabei.
+2. Python-Bibliotheken:
+Diese müssen in der Python-Umgebung installiert sein, die vom Java-Programm verwendet wird.
+Installation: Öffnen Sie eine Kommandozeile/Terminal und führen Sie den folgenden pip-Befehl aus (ggf. pip3 statt pip verwenden):
+pip install "camelot-py[cv]" pandas PyPDF2 openpyxl
+Use code with caution.
+Bash
+camelot-py[cv]: Installiert Camelot zusammen mit den OpenCV-Abhängigkeiten ([cv]), die für viele PDF-Layouts (insbesondere solche ohne klare Linien) benötigt werden.
+pandas: Wird von Camelot intensiv genutzt.
+PyPDF2: Haben wir im Skript hinzugefügt, um den Abrechnungszeitraum aus dem Text zu extrahieren.
+openpyxl: Wird oft von Pandas oder Camelot benötigt, um mit Excel-Formaten zu arbeiten (auch wenn wir den Export in Java machen, kann es intern genutzt werden).
+3. Projekt-Setup:
+Code: Sie benötigen den vollständigen Quellcode (Java-Dateien, pom.xml, Python-Skript tabellen_extraktor.py im scripts-Verzeichnis).
+Build: Sie müssen das Projekt mindestens einmal erfolgreich mit Maven gebaut haben:
+mvn clean install -U
+Use code with caution.
+Bash
+Dadurch werden die Java-Klassen kompiliert, Abhängigkeiten heruntergeladen und das ausführbare JAR (target/pdf-tabellen-extraktor-1.0-SNAPSHOT-jar-with-dependencies.jar) sowie das Python-Skript nach target/scripts/ kopiert.
+4. Eingabe-Dateien:
+Sie benötigen die PDF-Dateien, die Sie analysieren möchten.
+Das Programm funktioniert am besten mit PDFs, die maschinenlesbaren Text enthalten (nicht nur reine Bilder). Die Textextraktion für den Abrechnungszeitraum funktioniert nur dann zuverlässig.
+Die Tabellenextraktion mit Camelot funktioniert oft auch bei gescannten PDFs, aber die Genauigkeit kann geringer sein, und Sie müssen eventuell die Parameter im Python-Skript anpassen (z.B. flavor='stream' statt 'lattice').
+Wenn all diese Voraussetzungen erfüllt sind, sollten Sie in der Lage sein, das Programm mit java -jar target/pdf-tabellen-extraktor-1.0-SNAPSHOT-jar-with-dependencies.jar zu starten und zu verwenden.
+
+Camelot für Python 3.13 installieren/überprüfen:
+# --- Windows Beispiel ---
+# Zuerst überprüfen:
+C:\Users\IhrName\AppData\Local\Programs\Python\Python313\python.exe -m pip show camelot-py
+# Dann installieren/upgraden (ersetzen Sie den Pfad durch Ihren!):
+C:\Users\IhrName\AppData\Local\Programs\Python\Python313\python.exe -m pip install --upgrade "camelot-py[cv]" pandas PyPDF2 openpyxl
+
+# --- Linux/Mac Beispiel ---
+# Zuerst überprüfen:
+/usr/local/bin/python3.13 -m pip show camelot-py
+# Dann installieren/upgraden (ersetzen Sie den Pfad durch Ihren!):
+/usr/local/bin/python3.13 -m pip install --upgrade "camelot-py[cv]" pandas PyPDF2 openpyxl
+
+
+Java anweisen, Python 3.13 zu verwenden:
+Öffnen Sie die Datei src/main/java/com/ihrefirma/pdftabellenextraktor/modell/ExtraktionsService.java in Ihrem Editor.
+Finden Sie die Zeile: public ExtraktionsService() { ... }
+Innerhalb des Konstruktors, ersetzen oder kommentieren Sie die Zeile this.pythonAusfuehrbar = findePythonAusfuehrbar(); aus.
+Fügen Sie stattdessen eine Zeile hinzu, die den exakten Pfad zu Ihrer Python 3.13-Installation enthält (den Sie in Schritt 1 gefunden haben). Achtung bei Backslashes unter Windows!
+
+public ExtraktionsService() {
+...
+this.pythonAusfuehrbar = "C:\\Users\\IhrName\\AppData\\Local\\Programs\\Python\\Python313\\python.exe";
+
+Ghostscript installieren und erreichbar machen
+Wie in den Voraussetzungen erwähnt, ist Ghostscript ein separates Programm (keine Python-Bibliothek!), das Camelot benötigt, um PDF-Seiten in Bilder umzuwandeln, die dann analysiert werden können. Ihr System hat dieses Programm entweder gar nicht installiert oder Python/Camelot kann es nicht finden.
+Sie müssen Ghostscript für Ihr Betriebssystem installieren:
+Download: Gehen Sie zur offiziellen Ghostscript-Downloadseite: https://www.ghostscript.com/releases/gsdnld.html
+Wählen Sie die richtige Version: Laden Sie den AGPL-Release für Ihr Betriebssystem herunter (z.B. den 64-Bit-Windows-Installer).
+Installation:
+Windows: Führen Sie den Installer aus. Wichtig: Achten Sie während der Installation darauf, ob es eine Option gibt wie "Add Ghostscript to system PATH" oder ähnlich. Falls nicht, müssen Sie den Pfad manuell hinzufügen.
+Linux (Debian/Ubuntu): sudo apt-get update && sudo apt-get install ghostscript
+macOS (mit Homebrew): brew install ghostscript
+Pfad hinzufügen (WICHTIG, besonders für Windows):
+Windows: Damit Camelot und andere Programme Ghostscript finden können, muss das bin-Verzeichnis der Ghostscript-Installation zu Ihrer PATH-Umgebungsvariable hinzugefügt werden.
+Finden Sie heraus, wo Ghostscript installiert wurde (oft unter C:\Program Files\gs\gsX.YY\bin, wobei X.YY die Version ist).
+Suchen Sie in Windows nach "Umgebungsvariablen für dieses Konto bearbeiten".
+Wählen Sie die Variable Path aus und klicken Sie auf "Bearbeiten".
+Klicken Sie auf "Neu" und fügen Sie den vollständigen Pfad zum bin-Verzeichnis von Ghostscript hinzu (z.B. C:\Program Files\gs\gs10.03.1\bin).
+Klicken Sie auf "OK", um alle Fenster zu schließen.
+Sie müssen alle offenen Kommandozeilen/Terminals und ggf. Ihre IDE neu starten, damit die Änderung am PATH wirksam wird!
+Linux/Mac: Die Installation über den Paketmanager sollte den Pfad normalerweise automatisch korrekt setzen.
+Überprüfung (nach Neustart des Terminals/der IDE):
+Öffnen Sie eine neue Kommandozeile/Terminal.
+Geben Sie den Befehl ein, der für Ihr System passt:
+Windows: gswin64c --version (oder gswin32c für 32-Bit)
+Linux/Mac: gs --version
+Wenn eine Versionsnummer angezeigt wird, wurde Ghostscript erfolgreich installiert und ist im Pfad erreichbar. Wenn Sie einen "Befehl nicht gefunden"-Fehler erhalten, ist der PATH noch nicht korrekt gesetzt.
+Nächste Schritte:
+Installieren Sie Ghostscript wie oben beschrieben.
+Stellen Sie sicher, dass der Pfad korrekt gesetzt ist und überprüfen Sie die Installation im Terminal.
+Starten Sie Ihre IDE und/oder das Terminal, aus dem Sie Maven ausführen, neu.
+Führen Sie mvn clean install -U (optional, aber sicher) und dann java -jar ... erneut aus.
+
+Ghostscript zur Umgebungsvariable hinzufügen:
+System -> erweiterte Systemeinstellungen -> Umgebungsvariablen --> Systemvariablen --> Path bearbeiten...
+z.B:
+"C:\Program Files\gs\gs10.05.0\bin"
+Test: in Console "gswin64" aufrufen
+
+installiere Ghostscript-Interface via Python
+C:\Python\Python3\python.exe -m pip install ghostscript
+
+1. flavor (Extraktionsmethode)
+Der flavor-Parameter bestimmt die grundlegende Strategie, die Camelot anwendet, um Tabellen im PDF zu finden und zu interpretieren. Es gibt zwei Hauptmethoden:
+flavor='lattice' (Gitter):
+Funktionsweise: Diese Methode ist optimiert für Tabellen, die klare sichtbare Linien zwischen Zellen haben (ein Gitter bilden). Sie sucht explizit nach diesen horizontalen und vertikalen Linien, um die Tabellenstruktur zu definieren.
+Vorteile: Sehr präzise und zuverlässig, wenn klare Linien vorhanden sind. Weniger anfällig für Fehler durch unregelmäßige Abstände oder verschobenen Text. Kann auch leere Zellen gut erkennen.
+Nachteile: Funktioniert schlecht oder gar nicht, wenn die Tabelle keine (oder nur sehr wenige/unterbrochene) sichtbaren Linien hat.
+Wann verwenden: Ideal für klassische, gerasterte Tabellen, wie sie oft in Berichten, Rechnungen oder technischen Dokumenten vorkommen. Dies war der Flavor, der in Ihrem Beispiel-PDF nicht funktioniert hat.
+flavor='stream' (Fluss):
+Funktionsweise: Diese Methode versucht, Tabellen anhand der räumlichen Anordnung und Ausrichtung von Text auf der Seite zu erkennen. Sie analysiert die Leerräume (Whitespace) zwischen Wörtern und Textblöcken, um Spalten und Zeilen zu identifizieren. Sie ignoriert dabei weitgehend sichtbare Linien.
+Vorteile: Kann Tabellen erkennen, die keine sichtbaren Linien haben oder bei denen die Linien unvollständig sind. Funktioniert oft gut bei Tabellen, die eher wie Textblöcke aussehen, die nebeneinander angeordnet sind.
+Nachteile: Anfälliger für Fehler bei unregelmäßigen Abständen, mehrspaltigem Text außerhalb der Tabelle oder leicht verschobenen Textblöcken. Kann Schwierigkeiten haben, leere Zellen korrekt zuzuordnen oder Zellen zu erkennen, die sich über mehrere Zeilen/Spalten erstrecken. Die Genauigkeit hängt stärker von den Toleranzparametern ab.
+Wann verwenden: Gut für Tabellen ohne Linien oder wenn lattice versagt. Oft notwendig für weniger strukturierte Dokumente oder wenn Tabellen aus Textverarbeitungsprogrammen generiert wurden, die keine expliziten Gitterlinien verwenden. Dies war der Flavor, der in Ihrem Beispiel-PDF funktioniert hat und 7 Tabellenbereiche fand.
+2. row_tol (Zeilentoleranz) - Nur relevant für flavor='stream'
+Funktionsweise: Dieser Parameter definiert, wie viel vertikaler Leerraum (in PDF-Punkten) zwischen Textblöcken toleriert wird, bevor Camelot annimmt, dass eine neue Zeile beginnt. Anders gesagt: Wörter/Textblöcke, deren vertikaler Abstand kleiner oder gleich row_tol ist, werden als Teil derselben Zeile betrachtet.
+Zweck: Hilft stream, Wörter korrekt zu Zeilen zusammenzufassen, auch wenn sie nicht perfekt horizontal ausgerichtet sind oder wenn es leichten vertikalen Versatz gibt.
+Einfluss:
+Kleiner Wert (z.B. 1, 2): Camelot ist sehr streng. Nur Text, der sehr nah beieinander liegt, wird derselben Zeile zugeordnet. Kann dazu führen, dass Textblöcke fälschlicherweise auf verschiedene Zeilen aufgeteilt werden, wenn der vertikale Abstand minimal ist.
+Größerer Wert (z.B. 5, 10, 15): Camelot ist toleranter gegenüber vertikalem Abstand. Kann helfen, leicht versetzte Textelemente korrekt einer Zeile zuzuordnen. Ein zu großer Wert kann jedoch dazu führen, dass Text aus unterschiedlichen logischen Zeilen fälschlicherweise zu einer einzigen Zeile zusammengefasst wird.
+Standardwert: Camelot verwendet einen intern berechneten Standardwert, wenn Sie nichts angeben. Der Wert, den Sie im Spinner einstellen (Default war 2), überschreibt diesen Standard.
+Wann anpassen: Wenn Sie feststellen, dass stream Zeilen unnötig aufteilt oder fälschlicherweise zusammenführt, können Sie mit diesem Wert experimentieren. Beginnen Sie mit kleinen Werten und erhöhen Sie ihn schrittweise.
+Zusammenfassend:
+Mit flavor wählen Sie die grundlegende Erkennungsstrategie (Linien vs. Leerraum).
+Mit row_tol (und ähnlichen Parametern wie column_tol, die wir nicht implementiert haben) können Sie die Toleranz des stream-Algorithmus gegenüber Abständen feinjustieren.
+
+
+

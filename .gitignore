@@ -1,0 +1,25 @@
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Standard Java Build Output (falls kein Maven/Gradle)
+bin/
+
+# Maven Build Output
+target/
+
+# Gradle Build Output
+build/
+.gradle/
+
+# Log-Dateien
+*.log
+
+# Andere (siehe vorherige Antwort)
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
