@@ -1,36 +1,39 @@
 package de.anton.invoice.cecker.invoice_checker.view;
 
-// Benötigte Swing und AWT Klassen
-import javax.swing.*;
-import javax.swing.event.ChangeListener; // Für JSpinner Listener
-import javax.swing.table.DefaultTableModel;
-import java.awt.*;
-import java.awt.event.ActionListener;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
-
-// Für PropertyChangeListener (MVC)
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
-
-
-// Logging
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import de.anton.invoice.cecker.invoice_checker.model.AnwendungsModell;
+import de.anton.invoice.cecker.invoice_checker.model.ExtractionConfiguration;
 import de.anton.invoice.cecker.invoice_checker.model.ExtrahierteTabelle;
 import de.anton.invoice.cecker.invoice_checker.model.PdfDokument;
 
-import java.awt.event.ItemListener; // NEU
-
+//Benötigte Swing und AWT Klassen
+import javax.swing.*;
+import javax.swing.event.ChangeListener; // Für JSpinner Listener
+import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
+import java.awt.*;
+import java.awt.event.ActionListener;
+import java.awt.event.ItemListener; // Für Konfig-ComboBox Listener
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+
+//Für PropertyChangeListener (MVC)
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+
+//Logging
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
+
 //Hilfsklassen und Java Util
+import java.util.Comparator; // Für Sortierung
 import java.util.List;
 import java.util.Objects; // Für Vergleich
 import java.util.Optional;
 import java.util.Vector;
+
 
 /**
 * Das Hauptfenster (View) der Anwendung.
@@ -59,6 +62,10 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  private JComboBox<Object> configComboBox; // Kann String("Keine") oder ExtractionConfiguration enthalten
 
 
+ /**
+  * Konstruktor für das Hauptfenster.
+  * @param model Das Anwendungsmodell.
+  */
  public MainFrame(AnwendungsModell model) {
      this.model = model;
      this.model.addPropertyChangeListener(this); // Auf Modelländerungen lauschen
@@ -68,15 +75,15 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE); // Schließen im Listener behandeln
      setLocationRelativeTo(null); // Fenster zentrieren
 
-     initKomponenten();
-     layoutKomponenten();
+     initKomponenten(); // GUI-Elemente erstellen
+     layoutKomponenten(); // GUI-Elemente anordnen
 
      // Listener zum sauberen Behandeln des Fenster-Schließens
      addWindowListener(new WindowAdapter() {
          @Override
          public void windowClosing(WindowEvent e) {
              log.info("Fenster-Schließen-Ereignis erkannt.");
-             model.shutdownExecutor(); // Sicherstellen, dass Hintergrund-Threads gestoppt werden
+             model.shutdownExecutor(); // Hintergrund-Threads stoppen
              dispose(); // Fenster schließen
              System.exit(0); // Anwendung beenden
          }
@@ -97,7 +104,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      tabelleComboBox = new JComboBox<>();
      tabelleComboBox.setEnabled(false); // Initial deaktiviert
 
-     // Parameter Komponenten
+     // Parameter Komponenten initialisieren
      flavorComboBox = new JComboBox<>(new String[]{"lattice", "stream"});
      flavorComboBox.setSelectedItem("lattice"); // Default
      SpinnerNumberModel spinnerModel = new SpinnerNumberModel(2, 0, 100, 1); // Default 2, Min 0, Max 100, Step 1
@@ -109,10 +116,10 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      configComboBox.setPreferredSize(new Dimension(150, configComboBox.getPreferredSize().height)); // Breite begrenzen
      configComboBox.setToolTipText("Aktive Extraktionskonfiguration auswählen");
 
-     // Tabelle
+     // Tabelle initialisieren
      tabellenModell = new DefaultTableModel();
      datenTabelle = new JTable(tabellenModell);
-     datenTabelle.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+     datenTabelle.setAutoResizeMode(JTable.AUTO_RESIZE_OFF); // Horizontales Scrollen erlauben
 
      // Menüleiste
      menuBar = new JMenuBar();
@@ -120,7 +127,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      menuBar.add(configMenu);
      openConfigEditorMenuItem = new JMenuItem("Bereichsdefinition öffnen/bearbeiten...");
      configMenu.add(openConfigEditorMenuItem);
-     // Hier KEINEN Listener hinzufügen, das macht der Controller
+     // Listener für Menüpunkt wird vom Controller hinzugefügt
 
      // Statusleiste
      statusLabel = new JLabel("Bereit. Laden Sie PDFs, um zu starten.");
@@ -133,14 +140,14 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  private void layoutKomponenten() {
      // Top Panel für die Hauptsteuerlemente (Buttons, Auswahl, Parameter, Konfig)
      JPanel topPanel = new JPanel();
-     topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.X_AXIS));
+     topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.X_AXIS)); // Horizontale Anordnung
      topPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5)); // Außenabstand
 
      // Linke Steuerlemente (Laden, Export, PDF, Tabelle)
      topPanel.add(ladePdfButton);
-     topPanel.add(Box.createHorizontalStrut(10));
+     topPanel.add(Box.createHorizontalStrut(10)); // Abstand
      topPanel.add(exportExcelButton);
-     topPanel.add(Box.createHorizontalStrut(20));
+     topPanel.add(Box.createHorizontalStrut(20)); // Größerer Abstand
      topPanel.add(new JLabel("PDF:"));
      topPanel.add(pdfComboBox);
      topPanel.add(Box.createHorizontalStrut(10));
@@ -156,7 +163,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      topPanel.add(Box.createHorizontalGlue());
 
      // Rechtes Panel für die Parameter
-     JPanel parameterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+     JPanel parameterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0)); // Links ausgerichtet, wenig vertikaler Abstand
      parameterPanel.setBorder(BorderFactory.createTitledBorder("Parameter"));
      parameterPanel.add(new JLabel("Flavor:"));
      parameterPanel.add(flavorComboBox);
@@ -187,6 +194,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  // Listener für Konfiguration
  public void addConfigMenuOpenListener(ActionListener listener) {
      if (openConfigEditorMenuItem != null) {
+         // Füge Listener zum Menüpunkt hinzu (im Controller aufgerufen)
          openConfigEditorMenuItem.addActionListener(listener);
      } else {
          log.error("Menüpunkt zum Öffnen des Konfig-Editors wurde nicht korrekt initialisiert!");
@@ -256,7 +264,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
          // *** Informiere das Modell über diese Auswahl, FALLS sie von der im Modell abweicht ***
          if (!Objects.equals(model.getAusgewaehltesDokument(), erstesElement)) {
               log.info("---> Rufe model.setAusgewaehltesDokument auf, da Modellauswahl abweicht (Modell hat: {}).", model.getAusgewaehltesDokument());
-              model.setAusgewaehltesDokument(erstesElement); // Dies löst die Events für selectedDocument und selectedTable aus
+              model.setAusgewaehltesDokument(erstesElement); // Dies sollte die Events für selectedDocument und selectedTable auslösen
          } else {
              log.debug("---> Modell hatte bereits das korrekte erste Element ausgewählt. Kein setAusgewaehltesDokument nötig.");
              // Wenn das Modell schon korrekt war, die abhängigen GUIs aber nicht aktuell sind, manuell triggern.
@@ -282,6 +290,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      for (ActionListener l : pdfListeners) pdfComboBox.addActionListener(l);
      log.info("MainFrame.updatePdfComboBox ENDE"); // Markiere Ende
  }
+
 
  /**
   * Aktualisiert die Tabellen-ComboBox basierend auf dem aktuell im Modell ausgewählten PDF.
@@ -311,35 +320,23 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
              ExtrahierteTabelle modelSelectedTable = model.getAusgewaehlteTabelle();
              boolean selectionSet = false;
              if (selectedTable instanceof ExtrahierteTabelle && tabellen.contains(selectedTable)) {
-                  // Versuche, die vorherige Auswahl wiederherzustellen
                   tabelleComboBox.setSelectedItem(selectedTable);
                   log.debug("--> Tabellen-Auswahl wiederhergestellt: {}", selectedTable);
                   selectionSet = true;
-                  // Stelle sicher, dass Modell synchron ist
-                  if (!Objects.equals(modelSelectedTable, selectedTable)) {
-                       model.setAusgewaehlteTabelle((ExtrahierteTabelle)selectedTable);
-                  }
+                  if (!Objects.equals(modelSelectedTable, selectedTable)) { model.setAusgewaehlteTabelle((ExtrahierteTabelle)selectedTable); }
              } else if (modelSelectedTable != null && tabellen.contains(modelSelectedTable)) {
-                  // Wenn Modell eine gültige Auswahl hat, setze sie
                   tabelleComboBox.setSelectedItem(modelSelectedTable);
                   log.debug("--> Setze Tabellen-ComboBox Auswahl auf Tabelle aus Modell: {}", modelSelectedTable);
                   selectionSet = true;
              } else if (!tabellen.isEmpty()){
-                  // Fallback: Wähle das erste Element aus
                   ExtrahierteTabelle erstesElement = tabellen.get(0);
                   tabelleComboBox.setSelectedItem(erstesElement);
                   log.warn("--> Setze erstes Element '{}' in Tabellen-ComboBox als Fallback.", erstesElement);
-                  // Informiere das Modell über diese Auswahl
-                  if (!Objects.equals(model.getAusgewaehlteTabelle(), erstesElement)) {
-                       model.setAusgewaehlteTabelle(erstesElement);
-                  }
+                  if (!Objects.equals(model.getAusgewaehlteTabelle(), erstesElement)) { model.setAusgewaehlteTabelle(erstesElement); }
                   selectionSet = true;
              }
 
-              // Wenn keine Auswahl möglich war (Liste doch leer?), setze Modell zurück
-              if (!selectionSet && model.getAusgewaehlteTabelle() != null) {
-                   model.setAusgewaehlteTabelle(null);
-              }
+              if (!selectionSet && model.getAusgewaehlteTabelle() != null) { model.setAusgewaehlteTabelle(null); }
 
          } else {
               log.debug("--> Keine Tabellen für das ausgewählte PDF gefunden.");
@@ -354,7 +351,6 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      for(ActionListener l : tableListeners) tabelleComboBox.addActionListener(l);
      log.debug("Tabellen ComboBox Update abgeschlossen.");
  }
-
 
  /**
   * Aktualisiert die JTable (datenTabelle) mit den Daten der aktuell im Modell ausgewählten Tabelle.
@@ -381,21 +377,26 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
              tabellenModell.setDataVector(datenVektor, headers);
              setStatus("Zeige Tabelle: " + model.getAusgewaehlteTabelle()); // Verwende toString der Tabelle für Status
 
-             // Spaltenbreiten anpassen und verdoppeln
-             SwingUtilities.invokeLater(() -> { // In invokeLater, um sicherzustellen, dass Tabelle gezeichnet ist
-                 TabellenSpaltenAnpasser tca = new TabellenSpaltenAnpasser(datenTabelle);
-                 tca.adjustColumns();
-                 TableColumnModel columnModel = datenTabelle.getColumnModel();
-                 for (int i = 0; i < columnModel.getColumnCount(); i++) {
-                     TableColumn column = columnModel.getColumn(i);
-                     int aktuelleBreite = column.getPreferredWidth();
-                     int neueBreite = aktuelleBreite * 2;
-                     column.setPreferredWidth(neueBreite);
+             // Spaltenbreiten anpassen und verdoppeln (im EDT sicherstellen)
+             SwingUtilities.invokeLater(() -> { // Verzögere leicht, um Layout zu ermöglichen
+                 if (datenTabelle.getColumnCount() > 0) { // Nur ausführen, wenn Spalten existieren
+                     TabellenSpaltenAnpasser tca = new TabellenSpaltenAnpasser(datenTabelle);
+                     tca.adjustColumns();
+                     TableColumnModel columnModel = datenTabelle.getColumnModel();
+                     for (int i = 0; i < columnModel.getColumnCount(); i++) {
+                         TableColumn column = columnModel.getColumn(i);
+                         int aktuelleBreite = column.getPreferredWidth();
+                         int neueBreite = aktuelleBreite * 2; // Verdoppeln
+                         column.setPreferredWidth(neueBreite); // Setze neue bevorzugte Breite
+                     }
+                     log.debug("---> Alle Spaltenbreiten nach Verdopplung angepasst.");
+                 } else {
+                      log.debug("---> Keine Spalten zum Anpassen vorhanden.");
                  }
-                 log.debug("---> Alle Spaltenbreiten nach Verdopplung angepasst.");
              });
 
          } else {
+              // Daten sind komplett leer
               log.warn("--> Tabellendaten sind komplett leer. Leere Tabelle.");
               tabellenModell.setDataVector(new Vector<>(), new Vector<>()); // Explizit leeren
               setStatus("Ausgewählte Tabelle hat keine Daten oder Header: " + model.getAusgewaehlteTabelle());
@@ -415,6 +416,51 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
          }
      }
  }
+
+ /**
+  * Aktualisiert die Konfigurations-ComboBox mit den übergebenen Konfigurationen
+  * und wählt die aktuell im Modell aktive Konfiguration aus.
+  * Wird vom AppController aufgerufen.
+  *
+  * @param availableConfigs Eine Liste der verfügbaren ExtractionConfiguration-Objekte.
+  * @param activeConfig Die aktuell im Modell aktive Konfiguration (kann null sein).
+  */
+ public void updateConfigurationComboBox(List<ExtractionConfiguration> availableConfigs, ExtractionConfiguration activeConfig) {
+     log.debug("MainFrame.updateConfigurationComboBox wird aufgerufen mit {} Konfigs. Aktiv: {}",
+               (availableConfigs != null ? availableConfigs.size() : 0), // Prüfe auf null
+               (activeConfig != null ? activeConfig.getName() : "Keine"));
+
+     // Listener temporär entfernen, um Events während des Befüllens zu vermeiden
+     ItemListener[] listeners = configComboBox.getItemListeners();
+     for(ItemListener l : listeners) configComboBox.removeItemListener(l);
+
+     // ComboBox leeren und neu befüllen
+     configComboBox.removeAllItems();
+     configComboBox.addItem("Keine"); // Standardoption hinzufügen ("Keine Konfiguration")
+
+     // Füge geladene Konfigurationen hinzu (wenn Liste nicht null ist)
+     if (availableConfigs != null) {
+         // Sortiere nach Namen (optional, aber benutzerfreundlich)
+         availableConfigs.sort(Comparator.comparing(ExtractionConfiguration::getName, String.CASE_INSENSITIVE_ORDER));
+         for (ExtractionConfiguration config : availableConfigs) {
+             configComboBox.addItem(config); // Füge Konfigurationsobjekte hinzu
+         }
+     }
+
+     // Auswahl basierend auf dem übergebenen aktiven Konfigurationsobjekt setzen
+     if (activeConfig != null && availableConfigs != null && availableConfigs.contains(activeConfig)) {
+          configComboBox.setSelectedItem(activeConfig); // Setze das Objekt als ausgewählt
+          log.debug("--> Aktive Konfiguration '{}' in ComboBox ausgewählt.", activeConfig.getName());
+     } else {
+          configComboBox.setSelectedItem("Keine"); // Wähle "Keine" aus
+          log.debug("--> Keine aktive Konfiguration oder aktive nicht in Liste, 'Keine' ausgewählt.");
+     }
+
+     // Listener wieder hinzufügen
+     for(ItemListener l : listeners) configComboBox.addItemListener(l);
+     log.debug("Konfigurations-ComboBox Update abgeschlossen.");
+ }
+
 
  /**
   * Setzt den Text im StatusLabel (stellt sicher, dass dies im EDT geschieht).
@@ -440,7 +486,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
               case AnwendungsModell.DOCUMENTS_UPDATED_PROPERTY:
                   // Die Liste der Dokumente wurde geändert
                   log.info("-> propertyChange: Aktualisiere PDF ComboBox wegen '{}'.", propertyName);
-                  updatePdfComboBox(); // Aktualisiert PDF-Auswahl (löst ggf. weitere Events aus)
+                  updatePdfComboBox(); // Aktualisiert die PDF-Auswahl
                   break;
               case AnwendungsModell.SELECTED_DOCUMENT_PROPERTY:
                   // Das im Modell ausgewählte PDF-Dokument hat sich geändert
@@ -455,9 +501,11 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
                   // Stelle sicher, dass die Tabellen-ComboBox synchronisiert ist
                   synchronizeTableComboBoxSelection();
                   break;
-              case AnwendungsModell.ACTIVE_CONFIG_PROPERTY: // Aktive Konfiguration geändert
+              case AnwendungsModell.ACTIVE_CONFIG_PROPERTY:
+                  // Die im Modell aktive Konfiguration wurde geändert
                   log.info("-> propertyChange: Aktive Konfiguration geändert auf '{}'. Aktualisiere ComboBox-Auswahl.", evt.getNewValue());
-                  synchronizeConfigComboBoxSelection(); // Synchronisiere Konfig-Auswahl
+                  // Rufe die Methode auf, die die ComboBox mit den aktuellen Daten neu befüllt und die Auswahl setzt
+                  updateConfigurationComboBox(model.getConfigurationService().loadAllConfigurations(), model.getAktiveKonfiguration());
                   break;
               default:
                   // Ignoriere andere Events
@@ -473,36 +521,16 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
   */
  private void synchronizeTableComboBoxSelection() {
       ExtrahierteTabelle modelSelection = model.getAusgewaehlteTabelle();
+      // Prüfe, ob die Auswahl in der GUI von der im Modell abweicht
       if (!Objects.equals(tabelleComboBox.getSelectedItem(), modelSelection)) {
            log.debug("--> Synchronisiere Tabellen ComboBox mit Modell-Auswahl: {}", modelSelection);
-           // Listener kurz entfernen, um Endlosschleife zu vermeiden
+           // Listener kurz entfernen, um Endlosschleife durch setItem zu vermeiden
            ActionListener[] listeners = tabelleComboBox.getActionListeners();
            for (ActionListener l : listeners) tabelleComboBox.removeActionListener(l);
-           tabelleComboBox.setSelectedItem(modelSelection); // Setze Auswahl in der GUI
+           // Setze die Auswahl in der GUI entsprechend dem Modell
+           tabelleComboBox.setSelectedItem(modelSelection);
+           // Füge die Listener wieder hinzu
            for (ActionListener l : listeners) tabelleComboBox.addActionListener(l);
       }
  }
-
- /**
-  * Stellt sicher, dass die Auswahl in der Konfigurations-ComboBox mit der
-  * Auswahl im Modell übereinstimmt. Wird nach ACTIVE_CONFIG_PROPERTY aufgerufen.
-  */
-  private void synchronizeConfigComboBoxSelection() {
-      Object modelConfig = model.getAktiveKonfiguration();
-      Object comboSelection = configComboBox.getSelectedItem();
-      boolean needsUpdate = false;
-
-      if (modelConfig == null && !"Keine".equals(comboSelection)) {
-           needsUpdate = true; // Modell hat keine, Combo aber schon
-      } else if (modelConfig != null && !modelConfig.equals(comboSelection)) {
-           needsUpdate = true; // Auswahl unterscheidet sich
-      }
-
-      if (needsUpdate) {
-            log.debug("--> Synchronisiere Config ComboBox mit Modell-Auswahl: {}", modelConfig);
-            ItemListener[] listeners = configComboBox.getItemListeners(); for(ItemListener l:listeners) configComboBox.removeItemListener(l);
-            configComboBox.setSelectedItem(modelConfig != null ? modelConfig : "Keine"); // Setze Auswahl
-            for(ItemListener l:listeners) configComboBox.addItemListener(l);
-      }
-  }
 }
