@@ -83,8 +83,10 @@ public class ConfigurationDialog extends JDialog {
         updateModeSelection(); // Setzt Radiobuttons und Enabled-Status
         updatePageDisplay(); // Setzt Seiteninfo initial
 
-        setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE); // Schließt nur Dialog, nicht Anwendung
-        setSize(1000, 800);
+        pack();
+        
+//        setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE); // Schließt nur Dialog, nicht Anwendung
+//        setSize(1000, 800);
         setLocationRelativeTo(owner);
     }
 
