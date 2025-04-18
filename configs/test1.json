@@ -1,0 +1,16 @@
+{
+  "name" : "test1",
+  "usePageSpecificAreas" : true,
+  "globalAreas" : [ ],
+  "globalAreasList" : [ ],
+  "pageSpecificAreasMap" : {
+    "1" : [ {
+      "x1" : 67.200005,
+      "y1" : 644.60974,
+      "x2" : 173.76001,
+      "y2" : 753.56976,
+      "width" : 106.560005,
+      "height" : 108.96002
+    } ]
+  }
+}
