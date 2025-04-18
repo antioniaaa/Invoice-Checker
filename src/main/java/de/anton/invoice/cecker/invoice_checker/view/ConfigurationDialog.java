@@ -124,98 +124,90 @@ public class ConfigurationDialog extends JDialog {
         lblInfo.setForeground(Color.DARK_GRAY);
     }
 
+ // In ConfigurationDialog.java
+
     private void layoutComponents() {
-        // Hauptpanel mit BorderLayout (gut für Center/East Aufteilung)
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10)); // 10px Abstand
-        mainPanel.setBorder(new EmptyBorder(10, 10, 10, 10)); // Außenabstand
+        // Hauptpanel mit BorderLayout (Center für PDF, East für Steuerung)
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // PDF-Anzeigebereich im Scrollpane (nimmt den meisten Platz ein)
+        // PDF-Anzeige im Scrollpane (Center)
         JScrollPane scrollPanePdf = new JScrollPane(pdfPanel);
-        mainPanel.add(scrollPanePdf, BorderLayout.CENTER); // Wichtig: CENTER
+        mainPanel.add(scrollPanePdf, BorderLayout.CENTER);
 
-        // Rechtes Panel für alle Steuerelemente
-        // Verwende BoxLayout für vertikale Anordnung untereinander
-        JPanel rightPanel = new JPanel();
-        rightPanel.setLayout(new BoxLayout(rightPanel, BoxLayout.Y_AXIS));
-        rightPanel.setPreferredSize(new Dimension(300, 600)); // Breite festlegen, Höhe flexibel
+        // Rechtes Panel jetzt mit GridBagLayout für mehr Kontrolle
+        JPanel rightPanel = new JPanel(new GridBagLayout());
+        // rightPanel.setBackground(Color.YELLOW); // Testfarbe, falls benötigt
+        rightPanel.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 0)); // Kleiner linker Rand
+        GridBagConstraints gbcRight = new GridBagConstraints();
+        gbcRight.gridx = 0; // Alles in einer Spalte
+        gbcRight.weightx = 1.0; // Horizontale Ausdehnung erlauben
+        gbcRight.fill = GridBagConstraints.HORIZONTAL; // Horizontale Füllung
+        gbcRight.anchor = GridBagConstraints.NORTHWEST; // Oben links ausrichten
+        gbcRight.insets = new Insets(0, 0, 10, 0); // Abstand nach unten
 
-        // --- Bereich 1: Konfigurationsname und Modus ---
-        JPanel configPanel = new JPanel(new GridBagLayout()); // GridBag für flexible Anordnung
+        // --- Bereich 1: Konfiguration ---
+        JPanel configPanel = new JPanel(new GridBagLayout());
         configPanel.setBorder(BorderFactory.createTitledBorder("Konfiguration"));
         GridBagConstraints gbcConf = new GridBagConstraints();
         gbcConf.gridx = 0; gbcConf.gridy = 0; gbcConf.anchor = GridBagConstraints.WEST; gbcConf.insets = new Insets(2,5,2,5);
         configPanel.add(new JLabel("Name:"), gbcConf);
-
         gbcConf.gridx = 1; gbcConf.weightx = 1.0; gbcConf.fill = GridBagConstraints.HORIZONTAL;
         configPanel.add(txtConfigName, gbcConf);
-
-        // Modus Radiobuttons untereinander
-        gbcConf.gridx = 0; gbcConf.gridy = 1; gbcConf.gridwidth = 2; gbcConf.weightx = 0; gbcConf.fill = GridBagConstraints.NONE; // Reset fill
+        gbcConf.gridx = 0; gbcConf.gridy = 1; gbcConf.gridwidth = 2; gbcConf.weightx = 0; gbcConf.fill = GridBagConstraints.NONE;
         configPanel.add(radioPageSpecific, gbcConf);
-
         gbcConf.gridy = 2;
         configPanel.add(radioGlobal, gbcConf);
-
-        // Setze maximale Höhe, damit dieser Bereich nicht unnötig wächst
-        configPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, configPanel.getPreferredSize().height));
-        rightPanel.add(configPanel); // Füge KonfigPanel zum rechten Hauptpanel hinzu
-        rightPanel.add(Box.createVerticalStrut(10)); // Abstand nach unten
+        // Füge configPanel zum rightPanel hinzu
+        gbcRight.gridy = 0;
+        gbcRight.weighty = 0; // Soll nicht vertikal wachsen
+        rightPanel.add(configPanel, gbcRight);
 
         // --- Bereich 2: PDF Steuerung ---
         JPanel pdfControlPanel = new JPanel(new GridBagLayout());
         pdfControlPanel.setBorder(BorderFactory.createTitledBorder("Vorschau & Navigation"));
         GridBagConstraints gbcPdf = new GridBagConstraints();
-
         gbcPdf.gridx = 0; gbcPdf.gridy = 0; gbcPdf.gridwidth = 3; gbcPdf.anchor = GridBagConstraints.CENTER; gbcPdf.insets = new Insets(5,5,5,5);
-        pdfControlPanel.add(btnLoadPdf, gbcPdf); // Ladebutton zentriert oben
-
-        gbcPdf.gridy = 1; gbcPdf.gridwidth = 1; gbcPdf.weightx = 0.1; gbcPdf.fill = GridBagConstraints.HORIZONTAL; gbcPdf.anchor = GridBagConstraints.LINE_START; // Links
+        pdfControlPanel.add(btnLoadPdf, gbcPdf);
+        gbcPdf.gridy = 1; gbcPdf.gridwidth = 1; gbcPdf.weightx = 0.1; gbcPdf.fill = GridBagConstraints.HORIZONTAL; gbcPdf.anchor = GridBagConstraints.LINE_START;
         pdfControlPanel.add(btnPrevPage, gbcPdf);
-
-        gbcPdf.gridx = 1; gbcPdf.weightx = 0.8; gbcPdf.fill = GridBagConstraints.NONE; gbcPdf.anchor = GridBagConstraints.CENTER; // Mitte
+        gbcPdf.gridx = 1; gbcPdf.weightx = 0.8; gbcPdf.fill = GridBagConstraints.NONE; gbcPdf.anchor = GridBagConstraints.CENTER;
         pdfControlPanel.add(lblPageInfo, gbcPdf);
-
-        gbcPdf.gridx = 2; gbcPdf.weightx = 0.1; gbcPdf.fill = GridBagConstraints.HORIZONTAL; gbcPdf.anchor = GridBagConstraints.LINE_END; // Rechts
+        gbcPdf.gridx = 2; gbcPdf.weightx = 0.1; gbcPdf.fill = GridBagConstraints.HORIZONTAL; gbcPdf.anchor = GridBagConstraints.LINE_END;
         pdfControlPanel.add(btnNextPage, gbcPdf);
+        // Füge pdfControlPanel zum rightPanel hinzu
+        gbcRight.gridy = 1;
+        gbcRight.weighty = 0; // Soll nicht vertikal wachsen
+        rightPanel.add(pdfControlPanel, gbcRight);
 
-        pdfControlPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, pdfControlPanel.getPreferredSize().height)); // Max Höhe begrenzen
-        rightPanel.add(pdfControlPanel); // Füge PDFControlPanel zum rechten Hauptpanel hinzu
-        rightPanel.add(Box.createVerticalStrut(10)); // Abstand nach unten
-
-
-         // --- Bereich 3: Bereichsdefinition ---
-        JPanel areaPanel = new JPanel(new BorderLayout(5, 5)); // BorderLayout für Liste und Button
+        // --- Bereich 3: Bereichsdefinition ---
+        JPanel areaPanel = new JPanel(new BorderLayout(5, 5));
         areaPanel.setBorder(BorderFactory.createTitledBorder("Bereiche definieren (Aktuelle Seite)"));
-
-        // Info Label oben
         areaPanel.add(lblInfo, BorderLayout.NORTH);
-
-        // Liste der Bereiche in der Mitte (mit ScrollPane)
         JScrollPane areaScrollPane = new JScrollPane(areaList);
-        // Gib dem ScrollPane eine bevorzugte Höhe, damit es nicht kollabiert
-        areaScrollPane.setPreferredSize(new Dimension(200, 200)); // Höhe anpassen nach Bedarf
-        areaPanel.add(areaScrollPane, BorderLayout.CENTER); // Wichtig: CENTER
+        // Gib dem ScrollPane eine bevorzugte Höhe, aber erlaube Wachstum
+        areaScrollPane.setPreferredSize(new Dimension(200, 150));
+        areaPanel.add(areaScrollPane, BorderLayout.CENTER);
+        areaPanel.add(btnRemoveArea, BorderLayout.SOUTH);
+        // Füge areaPanel zum rightPanel hinzu, ERLAUBE vertikales Wachstum
+        gbcRight.gridy = 2;
+        gbcRight.weighty = 1.0; // Dieser Bereich soll den restlichen vertikalen Platz einnehmen
+        gbcRight.fill = GridBagConstraints.BOTH; // Fülle horizontal und vertikal
+        rightPanel.add(areaPanel, gbcRight);
 
-        // Button zum Entfernen unten
-        areaPanel.add(btnRemoveArea, BorderLayout.SOUTH); // Wichtig: SOUTH
-
-        rightPanel.add(areaPanel); // Füge AreaPanel zum rechten Hauptpanel hinzu
-
-        // --- Füller und Speicherbutton ---
-        // Fügt flexiblen Leerraum hinzu, schiebt den Speicherbutton nach unten
-        rightPanel.add(Box.createVerticalGlue());
-
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT)); // Button rechtsbündig
+        // --- Bereich 4: Speicherbutton ---
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         bottomPanel.add(btnSaveConfig);
-         // Verhindere, dass das Bottom-Panel vertikal wächst
-        bottomPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, bottomPanel.getPreferredSize().height));
-        rightPanel.add(bottomPanel); // Füge Speicherbutton-Panel zum rechten Hauptpanel hinzu
+        // Füge bottomPanel zum rightPanel hinzu
+        gbcRight.gridy = 3;
+        gbcRight.weighty = 0; // Soll nicht vertikal wachsen
+        gbcRight.fill = GridBagConstraints.HORIZONTAL; // Nur horizontal füllen
+        rightPanel.add(bottomPanel, gbcRight);
 
+        // Füge das (jetzt mit GridBagLayout aufgebaute) rechte Panel zum Hauptpanel hinzu
+        mainPanel.add(rightPanel, BorderLayout.EAST);
 
-        // Füge das rechte Panel zum Hauptpanel hinzu
-        mainPanel.add(rightPanel, BorderLayout.EAST); // Wichtig: EAST
-
-        // Setze das Hauptpanel als Content Pane des Dialogs
+        // Setze das Hauptpanel als Content Pane
         setContentPane(mainPanel);
     }
 

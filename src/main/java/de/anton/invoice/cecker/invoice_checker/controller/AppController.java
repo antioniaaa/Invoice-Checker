@@ -118,43 +118,7 @@ public class AppController {
  private void handleParameterChange(AWTEvent e) { triggerReprocessing("Parameter geändert"); }
  private void handleParameterChange(ChangeEvent e) { triggerReprocessing("Parameter geändert"); }
 
- // Handler für Konfigurationsmenü
- private void handleOpenConfigEditor(ActionEvent e) {
-     log.info("Öffne Konfigurationseditor...");
-     // Hole Kopie der aktiven Konfig zum Bearbeiten oder erstelle neue
-     ExtractionConfiguration configToEdit = model.getAktiveKonfiguration();
-     ExtractionConfiguration configForDialog;
-     if (configToEdit != null) {
-          // Lade eine frische Kopie über den Service, um Änderungen zu isolieren
-          configForDialog = model.getConfigurationService().loadConfiguration(configToEdit.getName());
-          if (configForDialog == null) { // Falls Laden fehlschlägt (unwahrscheinlich)
-              log.warn("Konnte Konfiguration '{}' nicht neu laden, erstelle neue.", configToEdit.getName());
-              configForDialog = new ExtractionConfiguration("Neue Konfiguration");
-          }
-     } else {
-          configForDialog = new ExtractionConfiguration("Neue Konfiguration");
-     }
 
-     // Öffne den Dialog
-     ConfigurationDialog dialog = new ConfigurationDialog(view, model.getConfigurationService(), configForDialog);
-     dialog.setVisible(true); // Blockiert bis Dialog geschlossen
-
-     // Nach dem Schließen des Dialogs
-     ExtractionConfiguration savedConfig = dialog.getSavedConfiguration();
-     if (savedConfig != null) {
-         log.info("Konfiguration '{}' wurde im Dialog gespeichert.", savedConfig.getName());
-         // Konfigurationsliste in der Haupt-GUI neu laden
-         loadAndDisplayAvailableConfigs();
-         // Versuche, die gespeicherte Konfiguration in der ComboBox auszuwählen
-         selectConfigurationInView(savedConfig.getName());
-         // Setze sie auch als aktiv im Modell (löst Event aus -> Neuverarbeitung?)
-         model.setAktiveKonfiguration(savedConfig);
-         // Optional: Direkte Neuverarbeitung nach Speichern auslösen
-         triggerReprocessing("Konfiguration gespeichert");
-     } else {
-          log.info("Konfigurationsdialog geschlossen ohne zu speichern.");
-     }
- }
 
  // Handler für Konfigurationsauswahl-ComboBox
   private void handleConfigSelectionChange(ItemEvent e) {
@@ -296,5 +260,60 @@ public class AppController {
           isProgrammaticChange = false;
       }
   }
+  
+  /**
+   * Öffnet den Konfigurationseditor-Dialog.
+   * Wird aufgerufen, wenn der entsprechende Menüpunkt geklickt wird.
+   */
+  private void handleOpenConfigEditor(ActionEvent e) {
+      log.info("Öffne Konfigurationseditor...");
+      // Hole Kopie der aktiven Konfig zum Bearbeiten oder erstelle neue
+      ExtractionConfiguration configToEdit = model.getAktiveKonfiguration();
+      ExtractionConfiguration configForDialog;
+      // Erstelle eine Kopie zum Bearbeiten, um das Original nicht direkt zu ändern
+      // (Verwendet hier der Einfachheit halber Laden/Speichern als Klon-Mechanismus)
+      if (configToEdit != null) {
+           configForDialog = model.getConfigurationService().loadConfiguration(configToEdit.getName());
+           if (configForDialog == null) {
+               log.warn("Konnte Konfiguration '{}' nicht neu laden, erstelle neue.", configToEdit.getName());
+               configForDialog = new ExtractionConfiguration("Neue Konfiguration");
+           }
+      } else {
+           configForDialog = new ExtractionConfiguration("Neue Konfiguration");
+      }
+
+      // Erstelle den Dialog
+      ConfigurationDialog dialog = new ConfigurationDialog(view, model.getConfigurationService(), configForDialog);
+
+      // --- KORREKTUR: Dialog sichtbar machen ---
+      dialog.setVisible(true); // Zeigt den Dialog an und blockiert, bis er geschlossen wird
+
+      // --- Code NACHDEM der Dialog geschlossen wurde ---
+      ExtractionConfiguration savedConfig = dialog.getSavedConfiguration(); // Hole das Ergebnis
+      if (savedConfig != null) {
+          // Wenn der Benutzer gespeichert hat
+          log.info("Konfiguration '{}' wurde im Dialog gespeichert/aktualisiert.", savedConfig.getName());
+          // Lade die Liste der verfügbaren Konfigs neu und aktualisiere die ComboBox im Hauptfenster
+          loadAndDisplayAvailableConfigs();
+          // Versuche, die neue/gespeicherte Konfiguration in der ComboBox auszuwählen
+          selectConfigurationInView(savedConfig.getName());
+          // Setze die gespeicherte Konfiguration als die neue aktive Konfiguration im Modell
+          model.setAktiveKonfiguration(savedConfig); // Löst Event aus
+          // Optional: Direkte Neuverarbeitung nach Speichern auslösen
+          triggerReprocessing("Konfiguration gespeichert");
+      } else {
+           // Wenn der Benutzer abgebrochen oder ohne Speichern geschlossen hat
+           log.info("Konfigurationsdialog geschlossen ohne zu speichern.");
+           // Stelle sicher, dass die Auswahl in der ComboBox mit dem Modell übereinstimmt
+           synchronizeConfigComboBoxSelectionInView(); // Eigene Hilfsmethode dafür erstellen? Oder loadAndDisplay... reicht.
+      }
+  }
+
+  // Hilfsmethode zum Synchronisieren (könnte auch Teil von loadAndDisplay... sein)
+  private void synchronizeConfigComboBoxSelectionInView() {
+       ExtractionConfiguration activeConfig = model.getAktiveKonfiguration();
+       selectConfigurationInView(activeConfig != null ? activeConfig.getName() : null); // Wählt "Keine" aus, wenn Name null ist
+  }
+  
 
 }
