@@ -455,6 +455,7 @@ public class AppController {
       // Hole alle gespeicherten Konfigurationen
       List<ExtractionConfiguration> configs = model.getConfigurationService().loadAllConfigurations();
       // Hole die aktuell im Modell aktive Konfiguration
+      log.info("Anzahl geladener Konfigurationen: {}", (configs != null ? configs.size() : "null"));
       ExtractionConfiguration activeConfig = model.getAktiveKonfiguration();
       // Rufe die Update-Methode der View auf und übergebe die Daten
       view.updateConfigurationComboBox(configs, activeConfig);

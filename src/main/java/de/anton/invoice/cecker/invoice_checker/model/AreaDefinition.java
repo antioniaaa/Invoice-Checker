@@ -4,10 +4,13 @@ import java.awt.geom.Rectangle2D;
 import java.io.Serializable; // Für Speicherung
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 /**
  * Repräsentiert einen rechteckigen Bereich auf einer PDF-Seite
  * in PDF-Koordinaten (Ursprung unten links).
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AreaDefinition implements Serializable {
     private static final long serialVersionUID = 1L; // Für Serialisierung
 

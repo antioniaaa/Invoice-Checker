@@ -458,6 +458,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
 
      // Listener wieder hinzufügen
      for(ItemListener l : listeners) configComboBox.addItemListener(l);
+     log.info("Anzahl Elemente in configComboBox nach Befüllen: {}", configComboBox.getItemCount());
      log.debug("Konfigurations-ComboBox Update abgeschlossen.");
  }
 
