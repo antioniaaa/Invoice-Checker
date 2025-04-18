@@ -98,7 +98,7 @@ def extrahiere_tabellen_nach_json(pdf_pfad, flavor_param, row_tol_str, table_are
         # --- Camelot Parameter vorbereiten (für ersten Versuch) ---
         aktiver_flavor = flavor_param # Der primär zu verwendende Flavor
         camelot_kwargs = {
-            'pages': page_string, # <<< KORREKTUR: Verwende den übergebenen page_string <<<
+            'pages': page_string, # <<< Nimmt den Wert aus dem '--page' Argument >>>
             'flavor': aktiver_flavor,
             'suppress_stdout': True # Verhindert, dass Camelot selbst nach stdout schreibt
         }
@@ -113,16 +113,14 @@ def extrahiere_tabellen_nach_json(pdf_pfad, flavor_param, row_tol_str, table_are
         # Füge table_areas hinzu, wenn sie übergeben wurden
         if table_area_strings:
             camelot_kwargs['table_areas'] = table_area_strings
-            print(f"INFO Python: Verwende table_areas={table_area_strings} für Seite(n) '{page_string}'", file=sys.stderr) # Korrektes Logging
+            print(f"INFO Python: Verwende table_areas={table_area_strings} für Seite(n) '{page_string}'", file=sys.stderr)
 
 
         # --- Erster Camelot Aufruf (mit primärem Flavor) ---
-        # Log-Ausgabe KORRIGIERT, um tatsächlichen page_string anzuzeigen
         print(f"INFO Python: Versuche camelot.read_pdf mit flavor='{aktiver_flavor}' für Seite(n) '{page_string}'...", file=sys.stderr)
         try:
             # Führe die Extraktion mit den vorbereiteten Argumenten aus
             tabellen = camelot.read_pdf(pdf_pfad, **camelot_kwargs) # Übergibt korrekte kwargs
-            # Log-Ausgabe KORRIGIERT, um tatsächlichen page_string anzuzeigen
             print(f"INFO Python: Camelot ({aktiver_flavor}) hat {tabellen.n} Tabellen auf Seite(n) '{page_string}' gefunden.", file=sys.stderr)
 
             # Verarbeite die gefundenen Tabellen
@@ -132,9 +130,12 @@ def extrahiere_tabellen_nach_json(pdf_pfad, flavor_param, row_tol_str, table_are
                     daten_zeilen = [[str(zelle) for zelle in reihe] for reihe in tabelle.df.values.tolist()]
                     tabellen_daten = [kopfzeile] + daten_zeilen
                     ergebnis["tables"].append({
-                        "index": i, "page": tabelle.page, "accuracy": tabelle.accuracy,
-                        "whitespace": tabelle.whitespace, "flavor": aktiver_flavor,
-                        "data": tabellen_daten
+                        "index": i,                     # Index der Tabelle (von Camelot auf dieser Seite)
+                        "page": tabelle.page,           # Seitenzahl (1-basiert, von Camelot)
+                        "accuracy": tabelle.accuracy,   # Genauigkeitsschätzung von Camelot
+                        "whitespace": tabelle.whitespace,# Whitespace-Prozentsatz von Camelot
+                        "flavor": aktiver_flavor,       # Welcher Flavor wurde verwendet?
+                        "data": tabellen_daten          # Die Tabellendaten [[header], [row1], [row2], ...]
                     })
                 tabellen_gefunden = True # Setze Flag, da Tabellen gefunden wurden
 
@@ -142,7 +143,6 @@ def extrahiere_tabellen_nach_json(pdf_pfad, flavor_param, row_tol_str, table_are
             # Führe den Fallback nur aus, wenn der ursprüngliche Flavor 'lattice' war
             # UND wenn bisher keine Tabellen gefunden wurden.
             elif aktiver_flavor == 'lattice':
-                 # Log-Ausgabe KORRIGIERT, um tatsächlichen page_string anzuzeigen
                  print(f"INFO Python: Lattice fand nichts, versuche jetzt explizit mit flavor='stream' für Seite(n) '{page_string}'...", file=sys.stderr)
                  # Baue Argumente für den Stream-Versuch
                  stream_kwargs = {
@@ -157,13 +157,11 @@ def extrahiere_tabellen_nach_json(pdf_pfad, flavor_param, row_tol_str, table_are
                  # Füge table_areas hinzu, wenn vorhanden! (WICHTIGE KORREKTUR)
                  if table_area_strings:
                      stream_kwargs['table_areas'] = table_area_strings
-                     # Log-Ausgabe KORRIGIERT, um tatsächlichen page_string anzuzeigen
                      print(f"INFO Python: Verwende auch für Stream-Fallback table_areas={table_area_strings} für Seite(n) '{page_string}'", file=sys.stderr)
 
                  # Versuche die Extraktion mit Stream
                  try:
                      tabellen_stream = camelot.read_pdf(pdf_pfad, **stream_kwargs) # Rufe mit Stream-kwargs auf
-                     # Log-Ausgabe KORRIGIERT, um tatsächlichen page_string anzuzeigen
                      print(f"INFO Python: Camelot (stream Fallback) hat {tabellen_stream.n} Tabellen auf Seite(n) '{page_string}' gefunden.", file=sys.stderr)
                      if tabellen_stream.n > 0:
                           # Verarbeite die Stream-Tabellen
@@ -184,7 +182,6 @@ def extrahiere_tabellen_nach_json(pdf_pfad, flavor_param, row_tol_str, table_are
                       if ergebnis["error"] is None: ergebnis["error"] = f"Stream Fallback Fehler: {e_stream_fallback}"
             else:
                  # Primärer Flavor war 'stream' und hat nichts gefunden -> Kein Fallback nötig
-                 # Log-Ausgabe KORRIGIERT, um tatsächlichen page_string anzuzeigen
                  print(f"WARNUNG Python: Camelot ({aktiver_flavor}) hat keine Tabellen auf Seite(n) '{page_string}' gefunden.", file=sys.stderr)
 
         except Exception as e_camelot:
