@@ -21,24 +21,25 @@ public class MainApplication {
              log.warn("System Look and Feel konnte nicht gesetzt werden.", e);
          }
 
-    	 // Erstellung der GUI immer im Event Dispatch Thread (EDT) sicherstellen
          SwingUtilities.invokeLater(() -> {
              log.info("Initialisiere Anwendung...");
 
-             // 1. Modell erstellen (enthält die Daten und Geschäftslogik)
+             // 1. Modell erstellen
              AnwendungsModell model = new AnwendungsModell();
 
-             // 2. Controller erstellen (benötigt nur das Modell für die Logik)
-             AppController controller = new AppController(model);
-
-             // 3. View erstellen (benötigt nur das Modell, um Daten anzuzeigen)
+             // --- KORREKTE REIHENFOLGE ---
+             // 2. View erstellen (braucht Modell)
+             // Der Controller wird hier noch nicht übergeben, da er noch nicht existiert
+             // Die View braucht den Controller aber auch nicht im Konstruktor.
              MainFrame view = new MainFrame(model); // Konstruktor OHNE Controller aufrufen
 
-             // 4. Listener im Controller initialisieren und View-Referenz setzen
-             // Jetzt, da die View existiert, kann der Controller seine Listener registrieren.
-             controller.initializeListeners(view);
+             // 3. Controller erstellen (braucht Modell UND die existierende View)
+             AppController controller = new AppController(model, view); // Übergib BEIDES
 
-             // 5. Hauptfenster sichtbar machen
+             // 4. Listener werden jetzt IM Controller-Konstruktor initialisiert
+             // controller.initializeListeners(view); // Nicht mehr nötig hier aufzurufen
+
+             // 5. View sichtbar machen
              view.setVisible(true);
              log.info("Anwendung gestartet und Hauptfenster ist sichtbar.");
         });

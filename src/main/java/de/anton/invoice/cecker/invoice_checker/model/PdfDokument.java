@@ -15,10 +15,10 @@ import com.fasterxml.jackson.annotation.JsonIgnore; // Import für @JsonIgnore
 
 import java.util.Collections; // Import für Collections.emptyList()
 
-
 /**
 * Repräsentiert ein verarbeitetes PDF-Dokument mit seinen Metadaten
-* (Dateiname, Pfad, Abrechnungszeitraum) und den darin gefundenen Tabellen.
+* (Dateiname, Pfad, Abrechnungszeitraum), den darin gefundenen Tabellen
+* und dem erkannten Rechnungstyp.
 * Implementiert Comparable für die Sortierung nach Abrechnungsdatum.
 */
 @JsonIgnoreProperties(ignoreUnknown = true) // Ignoriert unbekannte Felder beim JSON-Lesen
@@ -48,18 +48,19 @@ public class PdfDokument implements Comparable<PdfDokument> {
  private transient LocalDate abrechnungszeitraumStart; // Geparsstes Startdatum
  @JsonIgnore // Jackson soll dieses Feld ignorieren
  private transient LocalDate abrechnungszeitraumEnde; // Geparsstes Enddatum
+ @JsonIgnore // Jackson soll dieses Feld ignorieren
+ private transient InvoiceTypeConfig detectedInvoiceType; // Der erkannte Rechnungstyp
 
  // --- Konstruktoren ---
  /**
   * Standardkonstruktor (wird von Jackson benötigt).
+  * Initialisiert die Tabellenliste.
   */
  public PdfDokument() {
-     this.tables = new ArrayList<>(); // Sicherstellen, dass Liste nie null ist
+     this.tables = new ArrayList<>();
  }
 
  // --- Getter und Setter ---
- // Getter und Setter für alle Felder, die von Jackson gemappt werden sollen
- // oder von anderen Klassen benötigt werden.
 
  public String getSourcePdf() { return sourcePdf; }
  public void setSourcePdf(String sourcePdf) { this.sourcePdf = sourcePdf; }
@@ -88,12 +89,10 @@ public class PdfDokument implements Comparable<PdfDokument> {
  }
 
  public List<ExtrahierteTabelle> getTables() {
-     // Gib eine Kopie oder eine unveränderliche Liste zurück, wenn externe Änderungen verhindert werden sollen
-     // Hier: Gib die interne Liste direkt zurück (einfacher, aber änderbar von außen)
-     return tables != null ? tables : Collections.emptyList(); // Stelle sicher, dass nie null zurückgegeben wird
+     // Gib die interne Liste direkt zurück oder eine Kopie/unveränderliche Liste
+     return tables != null ? tables : Collections.emptyList(); // Nie null zurückgeben
  }
  public void setTables(List<ExtrahierteTabelle> tables) {
-     // Ersetze die interne Liste (erstelle Kopie für Sicherheit)
      this.tables = (tables != null) ? new ArrayList<>(tables) : new ArrayList<>();
  }
 
@@ -101,25 +100,45 @@ public class PdfDokument implements Comparable<PdfDokument> {
  public void setError(String error) { this.error = error; }
 
  // Getter für die geparsten (transienten) Datumsfelder
- @JsonIgnore // Sicherstellen, dass Jackson diese Getter nicht als Property interpretiert
+ @JsonIgnore
  public LocalDate getAbrechnungszeitraumStart() { return abrechnungszeitraumStart; }
- @JsonIgnore // Sicherstellen, dass Jackson diese Getter nicht als Property interpretiert
+ @JsonIgnore
  public LocalDate getAbrechnungszeitraumEnde() { return abrechnungszeitraumEnde; }
+
+ // --- NEUE Getter/Setter für den erkannten Typ ---
+ /**
+  * Gibt die während der Verarbeitung erkannte {@link InvoiceTypeConfig} zurück.
+  * @return Die erkannte Konfiguration oder null, wenn keine erkannt wurde.
+  */
+ @JsonIgnore // Nicht serialisieren
+ public InvoiceTypeConfig getDetectedInvoiceType() {
+     return detectedInvoiceType;
+ }
+ /**
+  * Setzt die während der Verarbeitung erkannte {@link InvoiceTypeConfig}.
+  * @param detectedInvoiceType Die erkannte Konfiguration.
+  */
+ @JsonIgnore // Nicht serialisieren
+ public void setDetectedInvoiceType(InvoiceTypeConfig detectedInvoiceType) {
+     this.detectedInvoiceType = detectedInvoiceType;
+ }
+ // --- Ende NEU ---
 
  // --- Hilfsmethoden ---
 
  /**
   * Fügt eine Liste von Tabellen zu diesem Dokument hinzu.
   * Nützlich zum Zusammenführen von Ergebnissen aus seitenweiser Extraktion.
+  * Sortiert die Tabellenliste anschließend nach Seite und Index.
   * @param newTables Die hinzuzufügenden Tabellen. Kann null sein.
   */
  public void addTables(List<ExtrahierteTabelle> newTables) {
      if (this.tables == null) {
-         this.tables = new ArrayList<>(); // Initialisiere, falls noch nicht geschehen
+         this.tables = new ArrayList<>();
      }
      if (newTables != null) {
-         this.tables.addAll(newTables); // Füge alle neuen Tabellen hinzu
-         // Optional: Tabellen nach Seite und Index neu sortieren, um Konsistenz zu wahren
+         this.tables.addAll(newTables);
+         // Sortiere die Tabellen nach Seite (aufsteigend) und dann nach Index (aufsteigend)
          this.tables.sort(Comparator.comparingInt(ExtrahierteTabelle::getPage)
                                     .thenComparingInt(ExtrahierteTabelle::getIndex));
      }
@@ -127,7 +146,6 @@ public class PdfDokument implements Comparable<PdfDokument> {
 
  /**
   * Interne Methode zum Parsen der Datumsstrings in LocalDate-Objekte.
-  * Wird nach dem Setzen der String-Repräsentationen aufgerufen.
   */
  private void parseDaten() {
      this.abrechnungszeitraumStart = versucheDatumParsen(this.abrechnungszeitraumStartStr);
@@ -136,81 +154,57 @@ public class PdfDokument implements Comparable<PdfDokument> {
 
  /**
   * Versucht, einen Datumsstring im Format JJJJ-MM-TT zu parsen.
-  * @param datumStr Der zu parsende String.
-  * @return Das LocalDate-Objekt oder null bei Fehlern oder leerem/null String.
   */
  private LocalDate versucheDatumParsen(String datumStr) {
      if (datumStr != null && !datumStr.isBlank()) {
          try {
-             return LocalDate.parse(datumStr); // Annahme: JJJJ-MM-TT Format
+             return LocalDate.parse(datumStr);
          } catch (DateTimeParseException e) {
-             // Fehler loggen wäre gut, aber hier erstmal nur null zurückgeben
              System.err.println("Konnte Datum nicht parsen: " + datumStr); // Einfache Fehlerausgabe
              return null;
          }
      }
-     return null; // Gib null zurück für null oder leere Strings
+     return null;
  }
 
  // --- Standardmethoden: toString, compareTo, equals, hashCode ---
 
- /**
-  * Gibt eine benutzerfreundliche Darstellung des Dokuments zurück (primär für ComboBox).
-  */
  @Override
  public String toString() {
      String anzeige = sourcePdf != null ? sourcePdf : "Unbekanntes PDF";
      if (abrechnungszeitraumStart != null) {
-          anzeige += " (" + abrechnungszeitraumStart + ")"; // Zeige geparstes Datum
+          anzeige += " (" + abrechnungszeitraumStart + ")";
      } else if (abrechnungszeitraumStartStr != null && !abrechnungszeitraumStartStr.isBlank()){
-          anzeige += " (Datum: " + abrechnungszeitraumStartStr + ")"; // Fallback auf String
+          anzeige += " (Datum: " + abrechnungszeitraumStartStr + ")";
      } else {
           anzeige += " (Kein Datum)";
      }
      if (error != null && !error.isBlank()) {
-         anzeige += " [FEHLER]"; // Markiere Dokumente mit Fehlern
+         anzeige += " [FEHLER]";
      }
      return anzeige;
  }
 
- /**
-  * Vergleicht dieses Dokument mit einem anderen, primär basierend auf dem Startdatum
-  * des Abrechnungszeitraums (aufsteigend, nulls last). Bei gleichem oder fehlendem
-  * Datum wird nach Dateiname sortiert.
-  */
  @Override
  public int compareTo(PdfDokument other) {
-      // Vergleiche primär nach Startdatum (nulls last = ohne Datum ans Ende)
-      // Sekundär nach Dateiname (nulls last = ohne Namen ans Ende)
       return Comparator.comparing(PdfDokument::getAbrechnungszeitraumStart, Comparator.nullsLast(LocalDate::compareTo))
-                    .thenComparing(PdfDokument::getSourcePdf, Comparator.nullsLast(String::compareToIgnoreCase)) // Ignoriere Groß/Kleinschreibung beim Namen
+                    .thenComparing(PdfDokument::getSourcePdf, Comparator.nullsLast(String::compareToIgnoreCase))
                     .compare(this, other);
  }
 
- /**
-  * Prüft auf Gleichheit basierend auf dem vollständigen Pfad (falls vorhanden)
-  * oder alternativ auf dem Dateinamen.
-  */
  @Override
  public boolean equals(Object o) {
      if (this == o) return true;
      if (o == null || getClass() != o.getClass()) return false;
      PdfDokument that = (PdfDokument) o;
-     // Nutze vollen Pfad zur Eindeutigkeitsprüfung, falls verfügbar
      if (fullPath != null && !fullPath.isBlank() && that.fullPath != null && !that.fullPath.isBlank()) {
           return fullPath.equals(that.fullPath);
      }
-     // Fallback auf Dateinamen (weniger sicher, aber besser als nichts)
      return Objects.equals(sourcePdf, that.sourcePdf);
  }
 
- /**
-  * Generiert einen Hashcode basierend auf dem vollständigen Pfad (falls vorhanden)
-  * oder alternativ auf dem Dateinamen.
-  */
  @Override
  public int hashCode() {
-      // Nutze vollen Pfad für Hashcode, falls verfügbar
      return Objects.hash(fullPath != null && !fullPath.isBlank() ? fullPath : sourcePdf);
  }
 }
