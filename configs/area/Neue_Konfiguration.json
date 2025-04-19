@@ -1,7 +1,6 @@
 {
   "name" : "Neue Konfiguration",
   "usePageSpecificAreas" : true,
-  "globalAreas" : [ ],
-  "pageSpecificAreasMap" : { },
-  "globalAreasList" : [ ]
+  "globalAreasList" : [ ],
+  "pageSpecificAreasMap" : { }
 }
