@@ -26,10 +26,16 @@ import java.util.Optional;
 import java.util.Set; // Import für Set (für Seitenzahlen)
 
 
+
+import java.util.concurrent.atomic.AtomicInteger; // Für Fortschrittszähler
+//PDFBox für Keyword-Suche
+import org.apache.pdfbox.pdmodel.PDDocument;
+
+
 /**
 * Das Kernmodell der Anwendung. Verwaltet die Liste der verarbeiteten PDF-Dokumente,
-* die Auswahl des aktuell angezeigten Dokuments und der Tabelle, und delegiert
-* die Extraktion und den Export an entsprechende Service-Klassen.
+* die Auswahl des aktuell angezeigten Dokuments und der Tabelle, die Extraktionsparameter
+* und Konfigurationen. Orchestriert die Extraktion und den Export.
 * Nutzt PropertyChangeSupport, um die View über Änderungen zu informieren.
 */
 public class AnwendungsModell {
@@ -39,25 +45,27 @@ public class AnwendungsModell {
  public static final String DOCUMENTS_UPDATED_PROPERTY = "documentsUpdated"; // Liste der Dokumente geändert
  public static final String SELECTED_DOCUMENT_PROPERTY = "selectedDocument"; // Ausgewähltes PDF geändert
  public static final String SELECTED_TABLE_PROPERTY = "selectedTable";       // Ausgewählte Tabelle geändert
- public static final String ACTIVE_CONFIG_PROPERTY = "activeConfig"; // Event für Konfig-Änderung
+ public static final String ACTIVE_CONFIG_PROPERTY = "activeConfig"; // Aktive Bereichs-Konfig geändert
+ public static final String PROGRESS_UPDATE_PROPERTY = "progressUpdate"; // Fortschritt der Verarbeitung
 
  // Zustand des Modells
- private final List<PdfDokument> dokumente = Collections.synchronizedList(new ArrayList<>()); // Thread-sichere Liste für Dokumente
- private PdfDokument ausgewaehltesDokument = null; // Das aktuell in der GUI ausgewählte PDF
- private ExtrahierteTabelle ausgewaehlteTabelle = null; // Die aktuell in der GUI ausgewählte Tabelle dieses PDFs
- private ExtractionConfiguration aktiveKonfiguration = null; // NEU: Aktive Konfiguration
+ private final List<PdfDokument> dokumente = Collections.synchronizedList(new ArrayList<>()); // Thread-sichere Liste
+ private PdfDokument ausgewaehltesDokument = null;
+ private ExtrahierteTabelle ausgewaehlteTabelle = null;
+ private ExtractionConfiguration aktiveKonfiguration = null; // Aktive Bereichs-Konfiguration
 
- // Service-Klassen für externe Aufgaben
- private final ExtraktionsService extraktionsService; // Für die PDF-Extraktion via Python
- private final ExcelExportService excelExportService; // Für den Excel-Export
- private final ConfigurationService configurationService; // NEU
+ // Service-Klassen
+ private final ExtraktionsService extraktionsService;
+ private final ExcelExportService excelExportService;
+ private final ConfigurationService configurationService; // Für Bereichs-Konfigs (.json)
+ private final InvoiceTypeService invoiceTypeService;       // Für Rechnungs-Typ-Konfigs (.csv)
 
  // MVC Unterstützung
  private final PropertyChangeSupport support = new PropertyChangeSupport(this);
 
  // Thread-Pool für asynchrone Extraktion
  private final ExecutorService executorService = Executors.newFixedThreadPool(
-         Runtime.getRuntime().availableProcessors() // Nutze verfügbare Prozessorkerne
+         Runtime.getRuntime().availableProcessors()
  );
 
  /**
@@ -66,65 +74,28 @@ public class AnwendungsModell {
  public AnwendungsModell() {
      this.extraktionsService = new ExtraktionsService();
      this.excelExportService = new ExcelExportService();
-     this.configurationService = new ConfigurationService(); // NEU: Initialisieren
-     // Lade Standard-/Default-Konfiguration beim Start? (optional)
+     this.configurationService = new ConfigurationService();
+     this.invoiceTypeService = new InvoiceTypeService();
+     // Optional: Standard Bereichs-Konfiguration laden
      // this.aktiveKonfiguration = configurationService.loadConfiguration("Standard");
  }
 
- // --- PropertyChange Support Methoden (Standard MVC) ---
-
- public void addPropertyChangeListener(PropertyChangeListener pcl) {
-     support.addPropertyChangeListener(pcl);
- }
-
- public void removePropertyChangeListener(PropertyChangeListener pcl) {
-     support.removePropertyChangeListener(pcl);
- }
+ // --- PropertyChange Support Methoden ---
+ public void addPropertyChangeListener(PropertyChangeListener pcl) { support.addPropertyChangeListener(pcl); }
+ public void removePropertyChangeListener(PropertyChangeListener pcl) { support.removePropertyChangeListener(pcl); }
 
  // --- Getter für den Modellzustand ---
-
- public List<PdfDokument> getDokumente() {
-      synchronized (dokumente) {
-          return new ArrayList<>(dokumente);
-      }
- }
-
- public PdfDokument getAusgewaehltesDokument() {
-     return ausgewaehltesDokument;
- }
-
- public ExtrahierteTabelle getAusgewaehlteTabelle() {
-     return ausgewaehlteTabelle;
- }
-
- public Optional<List<List<String>>> getAusgewaehlteTabellenDaten() {
-     log.debug("AnwendungsModell.getAusgewaehlteTabellenDaten aufgerufen.");
-     if (this.ausgewaehlteTabelle != null && this.ausgewaehlteTabelle.getData() != null) {
-         log.debug("--> Gebe Daten von Tabelle Index {} zurück.", this.ausgewaehlteTabelle.getIndex());
-         return Optional.of(this.ausgewaehlteTabelle.getData());
-     }
-     log.debug("--> Keine ausgewählte Tabelle oder keine Daten vorhanden.");
-     return Optional.empty();
- }
-
- public List<ExtrahierteTabelle> getVerfuegbareTabellen() {
-     if (ausgewaehltesDokument != null && ausgewaehltesDokument.getTables() != null) {
-         return new ArrayList<>(ausgewaehltesDokument.getTables());
-     }
-     return Collections.emptyList();
- }
-
- public ExtractionConfiguration getAktiveKonfiguration() {
-     return aktiveKonfiguration;
- }
-
- public ConfigurationService getConfigurationService() {
-     return configurationService;
- }
-
+ public List<PdfDokument> getDokumente() { synchronized (dokumente) { return new ArrayList<>(dokumente); } }
+ public PdfDokument getAusgewaehltesDokument() { return ausgewaehltesDokument; }
+ public ExtrahierteTabelle getAusgewaehlteTabelle() { return ausgewaehlteTabelle; }
+ public Optional<List<List<String>>> getAusgewaehlteTabellenDaten() { if(this.ausgewaehlteTabelle!=null&&this.ausgewaehlteTabelle.getData()!=null) return Optional.of(this.ausgewaehlteTabelle.getData()); return Optional.empty();}
+ public List<ExtrahierteTabelle> getVerfuegbareTabellen() { if(ausgewaehltesDokument!=null&&ausgewaehltesDokument.getTables()!=null) return new ArrayList<>(ausgewaehltesDokument.getTables()); return Collections.emptyList();}
+ public ExtractionConfiguration getAktiveKonfiguration() { return aktiveKonfiguration; }
+ // Getter für Services (damit Controller zugreifen kann)
+ public ConfigurationService getConfigurationService() { return configurationService; }
+ public InvoiceTypeService getInvoiceTypeService() { return invoiceTypeService; }
 
  // --- Setter für den Modellzustand (lösen Events aus) ---
-
  public void setAusgewaehltesDokument(PdfDokument selectedDocument) {
      log.info("Setze ausgew. Dok: {}", (selectedDocument != null ? selectedDocument.getSourcePdf() : "null"));
      PdfDokument oldSelection = this.ausgewaehltesDokument;
@@ -132,13 +103,9 @@ public class AnwendungsModell {
          this.ausgewaehltesDokument = selectedDocument;
          log.info("--> PDF geändert. Event '{}'", SELECTED_DOCUMENT_PROPERTY);
          SwingUtilities.invokeLater(() -> support.firePropertyChange(SELECTED_DOCUMENT_PROPERTY, oldSelection, this.ausgewaehltesDokument));
-
-         // Setze Tabellenauswahl auf erste Tabelle des neuen Dokuments oder null
          List<ExtrahierteTabelle> tables = getVerfuegbareTabellen();
          setAusgewaehlteTabelle(!tables.isEmpty() ? tables.get(0) : null);
-     } else {
-          log.debug("--> PDF nicht geändert.");
-     }
+     } else { log.debug("--> PDF nicht geändert."); }
  }
 
  public void setAusgewaehlteTabelle(ExtrahierteTabelle selectedTable) {
@@ -148,173 +115,172 @@ public class AnwendungsModell {
           this.ausgewaehlteTabelle = selectedTable;
           log.info("--> Tabelle geändert. Event '{}'", SELECTED_TABLE_PROPERTY);
           SwingUtilities.invokeLater(() -> support.firePropertyChange(SELECTED_TABLE_PROPERTY, oldSelection, this.ausgewaehlteTabelle));
-      } else {
-           log.debug("--> Tabelle nicht geändert.");
-      }
+      } else { log.debug("--> Tabelle nicht geändert."); }
  }
 
  public void setAktiveKonfiguration(ExtractionConfiguration aktiveKonfiguration) {
-     log.info("Setze aktive Konfig: {}", (aktiveKonfiguration != null ? aktiveKonfiguration.getName() : "null"));
+     log.info("Setze aktive Bereichs-Konfig: {}", (aktiveKonfiguration != null ? aktiveKonfiguration.getName() : "null"));
      ExtractionConfiguration oldConfig = this.aktiveKonfiguration;
      if (!Objects.equals(oldConfig, aktiveKonfiguration)) {
          this.aktiveKonfiguration = aktiveKonfiguration;
-         log.info("--> Aktive Konfig geändert. Event '{}'", ACTIVE_CONFIG_PROPERTY);
+         log.info("--> Aktive Bereichs-Konfig geändert. Event '{}'", ACTIVE_CONFIG_PROPERTY);
          SwingUtilities.invokeLater(() -> support.firePropertyChange(ACTIVE_CONFIG_PROPERTY, oldConfig, this.aktiveKonfiguration));
-         // Optional: Automatische Neuverarbeitung auslösen
-         // triggerReprocessingForCurrentPdf("Konfiguration geändert"); // Eigene Methode dafür nötig
-     } else {
-         log.debug("--> Aktive Konfig nicht geändert.");
-     }
+         // Optional: Neuverarbeitung auslösen? Wird aktuell vom Controller gemacht.
+     } else { log.debug("--> Aktive Bereichs-Konfig nicht geändert."); }
  }
 
  // --- Kernfunktionalität: Laden und Exportieren ---
 
  /**
-  * Überladene Methode für Kompatibilität und einfache Aufrufe ohne explizite Bereichsangabe.
-  * Verwendet die aktuell im Modell gesetzte aktive Konfiguration.
+  * Lädt und verarbeitet PDFs asynchron. Ermittelt Parameter aus GUI und InvoiceType-Konfig.
+  * Verwendet die aktive Bereichs-Konfiguration. Meldet Fortschritt.
+  * Dies ist die Hauptmethode, die vom Controller aufgerufen wird.
+  *
+  * @param pdfPfade Liste der PDF-Pfade.
+  * @param parameterGui Parameter aus der GUI (Flavor, RowTol).
+  * @param onSingleDocumentProcessedForStatus Callback für Status-Updates.
+  * @param progressCallback Callback für Fortschritts-Updates (Wert 0.0 bis 1.0).
   */
- public void ladeUndVerarbeitePdfs(List<Path> pdfPfade, Map<String, String> parameter, Consumer<PdfDokument> onSingleDocumentProcessedForStatus) {
-     ladeUndVerarbeitePdfsMitKonfiguration(pdfPfade, parameter, this.aktiveKonfiguration, onSingleDocumentProcessedForStatus);
+ public void ladeUndVerarbeitePdfs(List<Path> pdfPfade, Map<String, String> parameterGui, Consumer<PdfDokument> onSingleDocumentProcessedForStatus, Consumer<Double> progressCallback) {
+     // Nutze die aktuell im Modell gesetzte aktive Bereichs-Konfiguration
+     ladeUndVerarbeitePdfsMitKonfiguration(pdfPfade, parameterGui, this.aktiveKonfiguration, onSingleDocumentProcessedForStatus, progressCallback);
  }
 
  /**
-  * Lädt und verarbeitet PDFs asynchron mit einer spezifischen Konfiguration (oder ohne).
+  * Interne Methode: Lädt und verarbeitet PDFs asynchron mit einer spezifischen Bereichs-Konfiguration.
   * Orchestriert die Extraktion basierend auf globalen oder seitenspezifischen Bereichen.
   *
   * @param pdfPfade Liste der PDF-Pfade.
-  * @param parameter Extraktionsparameter (Flavor, RowTol etc.).
-  * @param config Die zu verwendende ExtractionConfiguration (kann null sein).
+  * @param parameterGui Extraktionsparameter aus der GUI (Flavor, RowTol etc.).
+  * @param config Die zu verwendende ExtractionConfiguration (Bereichs-Konfig, kann null sein).
   * @param onSingleDocumentProcessedForStatus Callback für Status.
+  * @param progressCallback Callback für Fortschritt.
   */
- public void ladeUndVerarbeitePdfsMitKonfiguration(List<Path> pdfPfade, Map<String, String> parameter, ExtractionConfiguration config, Consumer<PdfDokument> onSingleDocumentProcessedForStatus) {
-     log.info("Starte Ladevorgang für {} PDFs mit Parametern: {} und Konfiguration: {}",
-              pdfPfade.size(), parameter, (config != null ? config.getName() : "Keine"));
+ public void ladeUndVerarbeitePdfsMitKonfiguration(List<Path> pdfPfade, Map<String, String> parameterGui, ExtractionConfiguration config, Consumer<PdfDokument> onSingleDocumentProcessedForStatus, Consumer<Double> progressCallback) {
+     final ExtractionConfiguration aktuelleBereichsKonfig = config; // Aktive Bereichs-Konfig für diesen Lauf
+     log.info("Starte Ladevorgang für {} PDFs mit GUI-Parametern: {} und Bereichs-Konfig: {}",
+              pdfPfade.size(), parameterGui, (aktuelleBereichsKonfig != null ? aktuelleBereichsKonfig.getName() : "Keine"));
+
+     final int totalPdfs = pdfPfade.size();
+     final AtomicInteger processedCount = new AtomicInteger(0);
+
+     // Initialer Fortschritt 0%
+     if (progressCallback != null) SwingUtilities.invokeLater(() -> progressCallback.accept(0.0));
 
      for (Path pdfPfad : pdfPfade) {
-         final Map<String, String> aktuelleParameter = (parameter != null) ? new HashMap<>(parameter) : Collections.emptyMap();
-         final ExtractionConfiguration aktuelleConfig = config; // Finale Referenz für Lambda
+         // Kopiere GUI-Parameter für den Thread
+         final Map<String, String> aktuelleGuiParameter = (parameterGui != null) ? new HashMap<>(parameterGui) : Collections.emptyMap();
          final Path aktuellerPdfPfad = pdfPfad;
 
          log.info("Reiche PDF zur Verarbeitung ein: {}", aktuellerPdfPfad);
 
          executorService.submit(() -> { // Starte Verarbeitung im Thread-Pool
-             PdfDokument finalesErgebnisDokument = null; // Das Dokument, das am Ende hinzugefügt wird
+             PdfDokument finalesErgebnisDokument = null;
              boolean listUpdated = false;
-             StringBuilder gesammelteFehler = new StringBuilder(); // Sammelt Fehler von einzelnen Seiten
+             StringBuilder gesammelteFehler = new StringBuilder();
+             PDDocument pdDocForKeyword = null; // Für Keyword-Suche
 
              try {
-                 // Erstelle ein Basis-Dokumentobjekt für Metadaten
+                 // 1. Basis-Dokumentobjekt erstellen
                  finalesErgebnisDokument = new PdfDokument();
                  finalesErgebnisDokument.setSourcePdf(aktuellerPdfPfad.getFileName().toString());
                  finalesErgebnisDokument.setFullPath(aktuellerPdfPfad.toString());
 
-                 // --- Entscheide Verarbeitungsstrategie basierend auf Konfig ---
-                 if (aktuelleConfig == null) {
-                     // Fall 1: Keine Konfiguration -> Extrahiere alle Seiten ohne Bereiche
-                     log.debug("--> Keine aktive Konfiguration, extrahiere alle Seiten ohne Bereichseinschränkung.");
-                     PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(
-                         aktuellerPdfPfad, aktuelleParameter, null, "all");
-                     if (ergebnis != null) {
-                         finalesErgebnisDokument.addTables(ergebnis.getTables());
-                         finalesErgebnisDokument.setAbrechnungszeitraumStartStr(ergebnis.getAbrechnungszeitraumStartStr());
-                         finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(ergebnis.getAbrechnungszeitraumEndeStr());
-                         if (ergebnis.getError() != null) gesammelteFehler.append(ergebnis.getError()).append("; ");
-                     } else { gesammelteFehler.append("Extraktion lieferte null zurück; "); }
+                 // 2. Rechnungstyp anhand Keywords ermitteln
+                 InvoiceTypeConfig typConfig = null;
+                 try {
+                      pdDocForKeyword = PDDocument.load(aktuellerPdfPfad.toFile());
+                      typConfig = invoiceTypeService.findConfigForPdf(pdDocForKeyword);
+                 } catch (IOException e) {
+                      log.error("Fehler beim Laden von {} für Keyword-Suche: {}", aktuellerPdfPfad, e.getMessage());
+                      gesammelteFehler.append("Fehler Öffnen f. Keyword-Suche; ");
+                      typConfig = invoiceTypeService.getDefaultConfig(); // Nutze Default bei Fehler
+                 } finally {
+                      if (pdDocForKeyword != null) try { pdDocForKeyword.close(); } catch (IOException e) { /* ignored */ }
+                 }
+                 log.info("--> Ermittelter Rechnungstyp für {}: {}", aktuellerPdfPfad.getFileName(), (typConfig != null ? typConfig.getType() : "Unbekannt/Default"));
 
-                 } else if (!aktuelleConfig.isUsePageSpecificAreas()) {
-                     // Fall 2: Globale Bereiche sind aktiv
-                     List<AreaDefinition> globalAreas = aktuelleConfig.getGlobalAreasList();
-                     List<String> areasForPython = null;
+                 // 3. Finale Extraktionsparameter bestimmen (GUI überschreibt CSV-Default)
+                 Map<String, String> finaleParameter = new HashMap<>();
+                 InvoiceTypeConfig effectiveTypConfig = (typConfig != null) ? typConfig : invoiceTypeService.getDefaultConfig(); // Sicherstellen, dass wir einen Typ haben
+                 finaleParameter.put("flavor", aktuelleGuiParameter.getOrDefault("flavor", effectiveTypConfig.getDefaultFlavor()));
+                 finaleParameter.put("row_tol", aktuelleGuiParameter.getOrDefault("row_tol", effectiveTypConfig.getDefaultRowTol()));
+                 log.debug("--> Finale Extraktionsparameter: {}", finaleParameter);
+
+
+                 // 4. Bereiche und Seite(n) basierend auf Bereichs-Konfig ermitteln & Extraktion(en) starten
+                 String pageStringToProcess = "all";
+                 List<String> areasForPython = null;
+                 List<PdfDokument> teilErgebnisse = new ArrayList<>(); // Für seitenspezifische Ergebnisse
+
+                 if (aktuelleBereichsKonfig == null) {
+                     // Fall A: Keine Bereichs-Konfig -> 1 Aufruf für alles
+                     log.debug("--> Keine Bereichs-Konfiguration aktiv.");
+                     PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(aktuellerPdfPfad, finaleParameter, null, "all");
+                     if (ergebnis != null) teilErgebnisse.add(ergebnis);
+
+                 } else if (!aktuelleBereichsKonfig.isUsePageSpecificAreas()) {
+                     // Fall B: Globale Bereichs-Konfig -> 1 Aufruf für alles mit Bereichen
+                     List<AreaDefinition> globalAreas = aktuelleBereichsKonfig.getGlobalAreasList();
                      if (globalAreas != null && !globalAreas.isEmpty()) {
                          areasForPython = globalAreas.stream().map(AreaDefinition::toCamelotString).collect(Collectors.toList());
+                         pageStringToProcess = "all";
                          log.info("--> Verwende {} globale Bereiche für alle Seiten.", areasForPython.size());
-                     } else {
-                         log.debug("--> Globaler Modus aktiv, aber keine globalen Bereiche definiert. Extrahiere ohne Bereiche.");
-                     }
-                     PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(
-                         aktuellerPdfPfad, aktuelleParameter, areasForPython, "all");
-                     if (ergebnis != null) {
-                          finalesErgebnisDokument.addTables(ergebnis.getTables());
-                          finalesErgebnisDokument.setAbrechnungszeitraumStartStr(ergebnis.getAbrechnungszeitraumStartStr());
-                          finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(ergebnis.getAbrechnungszeitraumEndeStr());
-                          if (ergebnis.getError() != null) gesammelteFehler.append(ergebnis.getError()).append("; ");
-                     } else { gesammelteFehler.append("Extraktion (global) lieferte null zurück; "); }
+                     } else { log.debug("--> Globaler Modus, aber keine Bereiche definiert."); }
+                     PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(aktuellerPdfPfad, finaleParameter, areasForPython, pageStringToProcess);
+                     if (ergebnis != null) teilErgebnisse.add(ergebnis);
 
                  } else {
-                     // Fall 3: Seitenspezifische Bereiche sind aktiv
-                     log.info("--> Seitenspezifischer Modus aktiv. Verarbeite Seiten mit definierten Bereichen.");
-                     Map<Integer, List<AreaDefinition>> seitenBereicheMap = aktuelleConfig.getPageSpecificAreasMap();
+                     // Fall C: Seitenspezifische Bereichs-Konfig -> Mehrere Aufrufe
+                     log.info("--> Seitenspezifischer Modus aktiv.");
+                     Map<Integer, List<AreaDefinition>> seitenBereicheMap = aktuelleBereichsKonfig.getPageSpecificAreasMap();
                      if (seitenBereicheMap == null || seitenBereicheMap.isEmpty()) {
-                         // Fall 3a: Seitenspezifisch aktiv, aber keine Bereiche definiert
-                         log.warn("--> Seitenspezifischer Modus, aber KEINE Bereiche definiert. Extrahiere alle Seiten ohne Bereiche.");
-                         PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(
-                             aktuellerPdfPfad, aktuelleParameter, null, "all");
-                          if (ergebnis != null) {
-                              finalesErgebnisDokument.addTables(ergebnis.getTables());
-                              finalesErgebnisDokument.setAbrechnungszeitraumStartStr(ergebnis.getAbrechnungszeitraumStartStr());
-                              finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(ergebnis.getAbrechnungszeitraumEndeStr());
-                              if (ergebnis.getError() != null) gesammelteFehler.append(ergebnis.getError()).append("; ");
-                          } else { gesammelteFehler.append("Extraktion (Fallback ohne Bereiche) lieferte null zurück; "); }
+                          log.warn("--> Seitenspezifischer Modus, aber KEINE Bereiche definiert. Extrahiere alle Seiten ohne Bereiche.");
+                          PdfDokument ergebnis = extraktionsService.extrahiereTabellenAusPdf(aktuellerPdfPfad, finaleParameter, null, "all");
+                          if (ergebnis != null) teilErgebnisse.add(ergebnis);
                      } else {
-                         // Fall 3b: Seitenspezifisch aktiv UND Bereiche definiert -> Iteriere über Seiten
-                         Set<Integer> seitenMitBereichen = seitenBereicheMap.keySet();
-                          log.info("--> Verarbeite spezifische Seiten: {}", seitenMitBereichen);
-                         List<PdfDokument> teilErgebnisse = new ArrayList<>();
-                         boolean firstPageProcessed = false; // Um Datum nur einmal zu setzen
-
-                         for (Integer pageNum : seitenMitBereichen) { // Iteriere über definierte Seiten (1-basiert)
+                         // Iteriere über definierte Seiten und rufe Service einzeln auf
+                         Set<Integer> seiten = seitenBereicheMap.keySet();
+                         log.info("--> Verarbeite spezifische Seiten: {}", seiten);
+                         for (Integer pageNum : seiten) {
                              List<AreaDefinition> areasForPage = seitenBereicheMap.get(pageNum);
-                             if (areasForPage == null || areasForPage.isEmpty()) continue; // Sollte nicht vorkommen, aber sicher ist sicher
-
-                             List<String> areasForPythonPage = areasForPage.stream()
-                                                                 .map(AreaDefinition::toCamelotString)
-                                                                 .collect(Collectors.toList());
-                             log.info("----> Verarbeite Seite {} mit {} Bereichen...", pageNum, areasForPythonPage.size());
-
-                             // Rufe Service für DIESE EINE Seite mit IHREN Bereichen auf
+                             if (areasForPage == null || areasForPage.isEmpty()) continue;
+                             List<String> areasStr = areasForPage.stream().map(AreaDefinition::toCamelotString).collect(Collectors.toList());
+                             log.info("----> Verarbeite Seite {} mit {} Bereichen...", pageNum, areasStr.size());
                              PdfDokument seitenErgebnis = extraktionsService.extrahiereTabellenAusPdf(
-                                 aktuellerPdfPfad,
-                                 aktuelleParameter,
-                                 areasForPythonPage, // Bereiche nur für diese Seite
-                                 String.valueOf(pageNum) // Nur diese Seite verarbeiten
-                             );
-
-                             if (seitenErgebnis != null) {
-                                  teilErgebnisse.add(seitenErgebnis);
-                                  // Nimm Datum vom Ergebnis der ersten erfolgreich verarbeiteten Seite
-                                  if (!firstPageProcessed && seitenErgebnis.getAbrechnungszeitraumStartStr() != null) {
-                                       finalesErgebnisDokument.setAbrechnungszeitraumStartStr(seitenErgebnis.getAbrechnungszeitraumStartStr());
-                                       finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(seitenErgebnis.getAbrechnungszeitraumEndeStr());
-                                       firstPageProcessed = true;
-                                  }
-                                  // Sammle Fehler von einzelnen Seiten
-                                  if (seitenErgebnis.getError() != null) {
-                                       gesammelteFehler.append("Seite ").append(pageNum).append(": ").append(seitenErgebnis.getError()).append("; ");
-                                       log.warn("Fehler bei Extraktion von Seite {}: {}", pageNum, seitenErgebnis.getError());
-                                  }
-                             } else {
-                                  log.error("Extraktion für Seite {} lieferte null zurück.", pageNum);
-                                  gesammelteFehler.append("Seite ").append(pageNum).append(": Extraktion fehlgeschlagen (null); ");
-                             }
-                         } // Ende Schleife über Seiten
-
-                         // Füge alle gefundenen Tabellen aus den Teilergebnissen zusammen
-                         log.info("Führe Ergebnisse von {} verarbeiteten Seiten zusammen.", teilErgebnisse.size());
-                         for(PdfDokument teilErgebnis : teilErgebnisse) {
-                             if (teilErgebnis.getTables() != null) {
-                                  finalesErgebnisDokument.addTables(teilErgebnis.getTables());
-                             }
+                                 aktuellerPdfPfad, finaleParameter, areasStr, String.valueOf(pageNum));
+                             if (seitenErgebnis != null) teilErgebnisse.add(seitenErgebnis);
+                             else gesammelteFehler.append("Seite ").append(pageNum).append(": Extraktion fehlgeschlagen; "); // Fehler sammeln
                          }
-                         log.info("Zusammengeführtes Ergebnis enthält {} Tabellen.", finalesErgebnisDokument.getTables().size());
                      }
                  } // Ende Fallunterscheidung Konfiguration
 
-                 // Setze gesammelte Fehler (falls vorhanden) im finalen Dokument
+                 // 5. Ergebnisse zusammenführen (wenn mehrere Teilergebnisse)
+                 log.info("Führe Ergebnisse von {} Aufruf(en) zusammen.", teilErgebnisse.size());
+                 boolean firstResult = true;
+                 for (PdfDokument teilErgebnis : teilErgebnisse) {
+                      if (teilErgebnis.getTables() != null) {
+                           finalesErgebnisDokument.addTables(teilErgebnis.getTables());
+                      }
+                      // Nimm Datum vom ersten gültigen Teilergebnis
+                      if (firstResult && teilErgebnis.getAbrechnungszeitraumStartStr() != null) {
+                           finalesErgebnisDokument.setAbrechnungszeitraumStartStr(teilErgebnis.getAbrechnungszeitraumStartStr());
+                           finalesErgebnisDokument.setAbrechnungszeitraumEndeStr(teilErgebnis.getAbrechnungszeitraumEndeStr());
+                           firstResult = false;
+                      }
+                      // Sammle Fehler aus Teilergebnissen
+                      if (teilErgebnis.getError() != null) {
+                           gesammelteFehler.append(teilErgebnis.getError()).append("; ");
+                      }
+                 }
+                 log.info("Zusammengeführtes Ergebnis enthält {} Tabellen.", finalesErgebnisDokument.getTables().size());
+
+                 // Setze gesammelte Fehler im finalen Dokument
                  if (gesammelteFehler.length() > 0) {
                      finalesErgebnisDokument.setError(gesammelteFehler.toString().trim());
                  }
 
-                 // --- Liste aktualisieren (mit dem finalen Ergebnis) ---
+                 // --- Liste aktualisieren ---
                   synchronized (dokumente) {
                       final String pfadStr = aktuellerPdfPfad.toString();
                       dokumente.removeIf(d -> d.getFullPath() != null && d.getFullPath().equals(pfadStr));
@@ -322,38 +288,27 @@ public class AnwendungsModell {
                       Collections.sort(dokumente);
                       listUpdated = true;
                   }
-                  // Callback für Status-Update aufrufen
+                  // Callback für Status
                   if (onSingleDocumentProcessedForStatus != null) {
                       onSingleDocumentProcessedForStatus.accept(finalesErgebnisDokument);
                   }
 
              } catch (Exception e) {
-                 // Fange unerwartete Fehler während der Orchestrierung
-                 log.error("Unerwarteter Fehler bei der Verarbeitung von PDF {}: {}", aktuellerPdfPfad, e.getMessage(), e);
-                 if (finalesErgebnisDokument == null) { // Erstelle Fehlerobjekt, falls noch nicht geschehen
-                      finalesErgebnisDokument = new PdfDokument();
-                      finalesErgebnisDokument.setSourcePdf(aktuellerPdfPfad.getFileName().toString());
-                      finalesErgebnisDokument.setFullPath(aktuellerPdfPfad.toString());
-                 }
-                 finalesErgebnisDokument.setError("Interner Orchestrierungsfehler: " + e.getMessage());
-                 // Füge Fehlerdokument zur Liste hinzu
-                 synchronized(dokumente){
-                      final String pfadStr = aktuellerPdfPfad.toString();
-                      dokumente.removeIf(d -> d.getFullPath() != null && d.getFullPath().equals(pfadStr));
-                      dokumente.add(finalesErgebnisDokument);
-                      Collections.sort(dokumente);
-                      listUpdated = true;
-                 }
-                 if(onSingleDocumentProcessedForStatus!=null){ onSingleDocumentProcessedForStatus.accept(finalesErgebnisDokument); }
+                 // Allgemeine Fehlerbehandlung
+                 log.error("Unerwarteter Fehler bei Verarbeitung von PDF {}: {}", aktuellerPdfPfad, e.getMessage(), e);
+                 if (finalesErgebnisDokument == null) { /* ... Erstelle Fehlerobjekt ... */ finalesErgebnisDokument = new PdfDokument(); finalesErgebnisDokument.setSourcePdf(aktuellerPdfPfad.getFileName().toString()); finalesErgebnisDokument.setFullPath(aktuellerPdfPfad.toString());}
+                 finalesErgebnisDokument.setError("Interner Fehler: " + e.getMessage());
+                 synchronized(dokumente){ final String ps = aktuellerPdfPfad.toString(); dokumente.removeIf(d->d.getFullPath()!=null && d.getFullPath().equals(ps)); dokumente.add(finalesErgebnisDokument); Collections.sort(dokumente); listUpdated = true;}
+                 if(onSingleDocumentProcessedForStatus!=null){onSingleDocumentProcessedForStatus.accept(finalesErgebnisDokument);}
              } finally {
-                  // Feuere das Update-Event für die View, wenn die Liste geändert wurde
-                  if (listUpdated) {
-                       log.debug("Feuere PropertyChangeEvent '{}'", DOCUMENTS_UPDATED_PROPERTY);
-                       SwingUtilities.invokeLater(() -> support.firePropertyChange(DOCUMENTS_UPDATED_PROPERTY, null, getDokumente()));
-                  }
+                  // --- Fortschritt und Event ---
+                  int processed = processedCount.incrementAndGet();
+                  double progress = (double) processed / totalPdfs;
+                  if (progressCallback != null) SwingUtilities.invokeLater(() -> progressCallback.accept(progress));
+                  if (listUpdated) { SwingUtilities.invokeLater(() -> support.firePropertyChange(DOCUMENTS_UPDATED_PROPERTY, null, getDokumente())); }
              }
-         }); // Ende des Runnables für den ExecutorService
-     } // Ende der for-Schleife über pdfPfade
+         }); // Ende Runnable
+     } // Ende for Schleife
  }
 
 

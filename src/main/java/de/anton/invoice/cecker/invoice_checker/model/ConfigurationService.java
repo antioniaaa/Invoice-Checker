@@ -15,198 +15,124 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * Verwaltet das Laden und Speichern von Extraktionskonfigurationen.
- */
 
-import java.util.Comparator; // Import für Sortierung
+import java.util.Comparator;
 
 /**
  * Verwaltet das Laden und Speichern von {@link ExtractionConfiguration}-Objekten
- * als JSON-Dateien in einem 'configs'-Unterverzeichnis im Anwendungsverzeichnis.
+ * als JSON-Dateien im Unterverzeichnis 'configs/area'.
  */
 public class ConfigurationService {
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurationService.class);
-    private final Path configDir; // Das Verzeichnis für Konfigurationsdateien
-    private final ObjectMapper objectMapper; // Zum Lesen/Schreiben von JSON
+    private final Path configDir; // Verzeichnis: ./configs/area/
+    private final ObjectMapper objectMapper;
 
-    /**
-     * Konstruktor. Ermittelt das Konfigurationsverzeichnis ('configs' im Startverzeichnis),
-     * erstellt es bei Bedarf und initialisiert den JSON ObjectMapper.
-     */
+    private static final String AREA_CONFIG_SUBDIR = "area"; // Unterverzeichnis für Bereichs-Konfigs
+
     public ConfigurationService() {
-        Path resolvedConfigDir = null; // Temporäre Variable
+        Path resolvedConfigDir = null;
         try {
-            // Ermittle das aktuelle Arbeitsverzeichnis (Startverzeichnis der Anwendung)
             Path baseDir = Paths.get("").toAbsolutePath();
-            // Definiere den Pfad zum 'configs'-Unterverzeichnis
-            resolvedConfigDir = baseDir.resolve("configs");
+            // Pfad zum Unterverzeichnis 'configs/area'
+            resolvedConfigDir = baseDir.resolve("configs").resolve(AREA_CONFIG_SUBDIR);
 
-            // Erstelle das Verzeichnis, wenn es nicht existiert
             if (!Files.exists(resolvedConfigDir)) {
                 Files.createDirectories(resolvedConfigDir);
-                log.info("Konfigurationsverzeichnis erstellt: {}", resolvedConfigDir.toAbsolutePath());
+                log.info("Bereichs-Konfigurationsverzeichnis erstellt: {}", resolvedConfigDir.toAbsolutePath());
             } else if (!Files.isDirectory(resolvedConfigDir)) {
-                // Fehlerfall: Ein Eintrag 'configs' existiert, ist aber keine Directory
-                log.error("Ein Eintrag namens 'configs' existiert bereits, ist aber kein Verzeichnis: {}", resolvedConfigDir.toAbsolutePath());
-                // Setze Pfad auf null, um weitere Operationen zu verhindern
+                log.error("'{}' existiert, ist aber kein Verzeichnis!", resolvedConfigDir.toAbsolutePath());
                 resolvedConfigDir = null;
             } else {
-                // Verzeichnis existiert bereits
-                log.info("Verwende Konfigurationsverzeichnis: {}", resolvedConfigDir.toAbsolutePath());
+                log.info("Verwende Bereichs-Konfigurationsverzeichnis: {}", resolvedConfigDir.toAbsolutePath());
             }
         } catch (IOException e) {
-            log.error("Konnte Konfigurationsverzeichnis nicht erstellen oder darauf zugreifen: {}", resolvedConfigDir, e);
-            resolvedConfigDir = null; // Setze auf null im Fehlerfall
+            log.error("Konnte Bereichs-Konfigurationsverzeichnis nicht erstellen/darauf zugreifen: {}", resolvedConfigDir, e);
+            resolvedConfigDir = null;
         } catch (Exception e) {
-             log.error("Unerwarteter Fehler beim Ermitteln/Erstellen des Konfigurationsverzeichnisses.", e);
-             resolvedConfigDir = null; // Setze auf null im Fehlerfall
+             log.error("Unerwarteter Fehler beim Initialisieren des Bereichs-Konfigurationsverzeichnisses.", e);
+             resolvedConfigDir = null;
         }
-        // Weise den finalen (möglicherweise null) Pfad dem Feld zu
         this.configDir = resolvedConfigDir;
 
-        // Initialisiere und konfiguriere den ObjectMapper für JSON
         this.objectMapper = new ObjectMapper();
-        // Aktiviere Einrückung für lesbare JSON-Dateien
         this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
-        // Optional: Fehlertoleranz beim Lesen, falls zusätzliche Felder im JSON sind
-        // this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    /**
-     * Speichert eine {@link ExtractionConfiguration} als JSON-Datei im Konfigurationsverzeichnis.
-     * Der Dateiname wird aus dem Namen der Konfiguration abgeleitet (Sonderzeichen ersetzt).
-     * Überschreibt eine vorhandene Datei mit demselben Namen.
-     *
-     * @param config Die zu speichernde Konfiguration. Darf nicht null sein und muss einen Namen haben.
-     * @throws IOException Wenn das Konfigurationsverzeichnis nicht verfügbar ist oder ein Fehler beim Schreiben auftritt.
-     * @throws IllegalArgumentException Wenn die Konfiguration oder ihr Name ungültig ist.
-     */
+    /** Speichert Konfiguration. */
     public void saveConfiguration(ExtractionConfiguration config) throws IOException, IllegalArgumentException {
-        // Prüfe, ob das Konfig-Verzeichnis gültig initialisiert wurde
-        if (configDir == null) {
-            throw new IOException("Konfigurationsverzeichnis ist nicht verfügbar.");
-        }
-        // Prüfe, ob die übergebene Konfiguration gültig ist
-        if (config == null || config.getName() == null || config.getName().isBlank()) {
-            throw new IllegalArgumentException("Konfiguration oder deren Name darf nicht leer sein.");
-        }
+        if (configDir == null) throw new IOException("Bereichs-Konfigurationsverzeichnis nicht verfügbar.");
+        if (config == null || config.getName() == null || config.getName().isBlank()) throw new IllegalArgumentException("Konfiguration/Name darf nicht leer sein.");
 
-        // Erzeuge einen sicheren Dateinamen aus dem Konfigurationsnamen
-        // Ersetzt alle Zeichen außer Buchstaben, Zahlen, Bindestrich, Unterstrich, Punkt durch "_"
         String safeName = config.getName().replaceAll("[^a-zA-Z0-9\\-_\\.]", "_");
         String fileName = safeName + ".json";
-        Path filePath = configDir.resolve(fileName); // Kombiniere Verzeichnis und Dateiname
-
-        log.info("Speichere Konfiguration '{}' nach: {}", config.getName(), filePath.toAbsolutePath());
+        Path filePath = configDir.resolve(fileName);
+        log.info("Speichere Bereichs-Konfiguration '{}' nach: {}", config.getName(), filePath.toAbsolutePath());
         try {
-            // Schreibe das Konfigurationsobjekt als JSON in die Datei
             objectMapper.writeValue(filePath.toFile(), config);
         } catch (IOException e) {
-            log.error("Fehler beim Speichern der Konfiguration '{}' nach {}: {}", config.getName(), filePath, e.getMessage());
-            // Leite die Exception weiter
+            log.error("Fehler beim Speichern der Bereichs-Konfiguration '{}': {}", config.getName(), e.getMessage());
             throw e;
         }
     }
 
-    /**
-     * Lädt eine {@link ExtractionConfiguration} aus einer JSON-Datei im Konfigurationsverzeichnis.
-     *
-     * @param name Der Name der zu ladenden Konfiguration (entspricht dem Dateinamen ohne .json).
-     * @return Die geladene ExtractionConfiguration oder null, wenn die Datei nicht existiert,
-     *         nicht lesbar ist, ein Fehler beim Parsen auftritt oder der Name ungültig ist.
-     */
+    /** Lädt Konfiguration. */
     public ExtractionConfiguration loadConfiguration(String name) {
-        // Prüfe auf gültigen Namen und initialisiertes Verzeichnis
-        if (configDir == null) { log.error("Konfigurationsverzeichnis nicht initialisiert, Laden nicht möglich."); return null; }
-        if (name == null || name.isBlank()) { log.warn("Ungültiger Name für Ladeversuch angegeben: {}", name); return null; }
+        if (configDir == null) { log.error("Bereichs-Konfigurationsverzeichnis nicht initialisiert."); return null; }
+        if (name == null || name.isBlank()) return null;
 
-        // Erzeuge Dateinamen und vollständigen Pfad
         String safeName = name.replaceAll("[^a-zA-Z0-9\\-_\\.]", "_");
         String fileName = safeName + ".json";
         Path filePath = configDir.resolve(fileName);
 
-        // Prüfe Existenz und Lesbarkeit der Datei
-        if (!Files.exists(filePath)) {
-            log.warn("Konfigurationsdatei nicht gefunden: {}", filePath.toAbsolutePath());
+        if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
+            log.warn("Bereichs-Konfigurationsdatei nicht gefunden oder lesbar: {}", filePath.toAbsolutePath());
             return null;
         }
-        if (!Files.isReadable(filePath)) {
-             log.error("Keine Leseberechtigung für Konfigurationsdatei: {}", filePath.toAbsolutePath());
-             return null;
-        }
 
-        log.info("Lade Konfiguration '{}' von: {}", name, filePath.toAbsolutePath());
+        log.info("Lade Bereichs-Konfiguration '{}' von: {}", name, filePath.toAbsolutePath());
         try {
-            // Lese JSON-Datei und mappe sie auf das Konfigurationsobjekt
             ExtractionConfiguration config = objectMapper.readValue(filePath.toFile(), ExtractionConfiguration.class);
-
-            // Sicherheitscheck: Stelle sicher, dass der Name im Objekt dem Dateinamen entspricht
-            // (falls die Datei manuell bearbeitet wurde)
             if (config != null && !name.equals(config.getName())) {
-                 log.warn("Name in Konfigurationsdatei ('{}') weicht vom erwarteten Namen ('{}') ab. Setze Namen auf '{}'.", config.getName(), name, name);
-                 config.setName(name); // Korrigiere den Namen im geladenen Objekt
+                 log.warn("Name in Bereichs-Konfigdatei ('{}') weicht ab von '{}'. Setze Namen auf '{}'.", config.getName(), name, name);
+                 config.setName(name);
             }
             return config;
         } catch (IOException e) {
-            // Fange Fehler beim Lesen oder Parsen der JSON-Datei ab
-            log.error("Fehler beim Laden/Parsen der Konfiguration '{}' von {}: {}", name, filePath, e.getMessage(), e);
-            return null; // Gib null zurück im Fehlerfall
+            log.error("Fehler beim Laden/Parsen der Bereichs-Konfiguration '{}': {}", name, e.getMessage(), e);
+            return null;
         }
     }
 
-    /**
-     * Gibt eine Liste der Namen aller verfügbaren (gespeicherten) Konfigurationen zurück.
-     * Liest alle .json-Dateien im Konfigurationsverzeichnis und extrahiert die Namen.
-     *
-     * @return Eine sortierte Liste der Konfigurationsnamen (ohne .json Endung). Gibt eine leere Liste zurück,
-     *         wenn das Verzeichnis nicht existiert oder ein Fehler auftritt.
-     */
+    /** Gibt Namen aller verfügbaren Bereichs-Konfigurationen zurück. */
     public List<String> getAvailableConfigurationNames() {
-        // Prüfe, ob das Konfigurationsverzeichnis gültig ist
         if (configDir == null || !Files.isDirectory(configDir)) {
-             if (configDir != null) log.warn("Konfigurationsverzeichnis '{}' ist kein gültiges Verzeichnis.", configDir.toAbsolutePath());
-             else log.warn("Konfigurationsverzeichnis wurde nicht initialisiert.");
-            return Collections.emptyList(); // Leere Liste zurückgeben
+            return Collections.emptyList();
         }
-
-        // Lese alle Dateien im Verzeichnis auf
         try (Stream<Path> files = Files.list(configDir)) {
             return files
-                    .filter(Files::isRegularFile) // Nur reguläre Dateien berücksichtigen
-                    .map(Path::getFileName)       // Nur den Dateinamen extrahieren
-                    .map(Path::toString)          // In einen String umwandeln
-                    .filter(name -> name.toLowerCase().endsWith(".json")) // Nur .json Dateien filtern
-                    .map(name -> name.substring(0, name.length() - ".json".length())) // ".json" Endung entfernen
-                    .sorted(String.CASE_INSENSITIVE_ORDER) // Namen sortieren (unabhängig von Groß/Kleinschreibung)
-                    .collect(Collectors.toList()); // Als Liste sammeln
+                    .filter(Files::isRegularFile)
+                    .map(Path::getFileName).map(Path::toString)
+                    .filter(name -> name.toLowerCase().endsWith(".json"))
+                    .map(name -> name.substring(0, name.length() - ".json".length()))
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .collect(Collectors.toList());
         } catch (IOException e) {
-            // Fehler beim Auflisten der Dateien loggen
-            log.error("Fehler beim Auflisten der Konfigurationsdateien in {}: {}", configDir.toAbsolutePath(), e.getMessage());
-            return Collections.emptyList(); // Leere Liste im Fehlerfall
+            log.error("Fehler beim Auflisten der Bereichs-Konfigdateien in {}: {}", configDir.toAbsolutePath(), e.getMessage());
+            return Collections.emptyList();
         }
     }
 
-    /**
-     * Lädt alle verfügbaren Konfigurationen aus dem Konfigurationsverzeichnis.
-     *
-     * @return Eine Liste aller erfolgreich geladenen ExtractionConfiguration-Objekte.
-     *         Die Liste kann leer sein, wenn keine Konfigurationen gefunden wurden oder Fehler auftraten.
-     */
+    /** Lädt alle verfügbaren Bereichs-Konfigurationen. */
      public List<ExtractionConfiguration> loadAllConfigurations() {
-         List<String> names = getAvailableConfigurationNames(); // Hole Namen aller .json Dateien
+         List<String> names = getAvailableConfigurationNames();
          List<ExtractionConfiguration> configs = new ArrayList<>();
-         // Lade jede Konfiguration einzeln anhand ihres Namens
          for (String name : names) {
              ExtractionConfiguration config = loadConfiguration(name);
-             if (config != null) { // Füge nur erfolgreich geladene hinzu
-                 configs.add(config);
-             }
+             if (config != null) configs.add(config);
          }
-         // Optional: Sortiere die geladenen Konfigurationen nach Namen
          configs.sort(Comparator.comparing(ExtractionConfiguration::getName, String.CASE_INSENSITIVE_ORDER));
-         log.info("{} Konfiguration(en) erfolgreich geladen.", configs.size());
+         log.info("{} Bereichs-Konfiguration(en) erfolgreich geladen.", configs.size());
          return configs;
      }
 }

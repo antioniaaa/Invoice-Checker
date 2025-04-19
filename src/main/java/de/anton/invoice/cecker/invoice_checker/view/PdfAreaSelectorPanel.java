@@ -4,7 +4,6 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.rendering.RenderDestination; // Import für Rendering Ziel
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,214 +13,322 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.geom.AffineTransform;
 import java.awt.geom.Point2D;
-import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections; // Import hinzugefügt
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Ein Panel zur Anzeige einer PDF-Seite und zur visuellen Auswahl
- * von rechteckigen Bereichen. Funktionierende Basisversion mit Vereinfachungen.
+ * von rechteckigen Bereichen. Implementiert einfaches Zoomen und Bereichsmanagement.
+ * VEREINFACHUNGEN: Keine Rotation, einfache Koordinatentransformation.
  */
 public class PdfAreaSelectorPanel extends JPanel {
     private static final Logger log = LoggerFactory.getLogger(PdfAreaSelectorPanel.class);
 
-    private PDDocument currentDocument;
-    private PDFRenderer pdfRenderer;
-    private int currentPageNumber = -1; // 0-basiert intern, -1 wenn nichts geladen
-    private BufferedImage currentPageImage;
-    private float renderScale = 1.5f; // Skalierung für bessere Lesbarkeit (höhere Auflösung intern)
-    private float displayScale = 1.0f; // Skalierung für die Anzeige im Panel (wird angepasst)
+    private PDDocument currentDocument; // Das aktuell geladene PDFBox Dokument
+    private PDFRenderer pdfRenderer;    // Zum Rendern der Seiten
+    private int currentPageNumber = -1; // Aktuell angezeigte Seite (0-basiert), -1 wenn keine
+    private BufferedImage pageImage;    // Das gerenderte Bild der aktuellen Seite
+    private float currentRenderScale = 1.5f; // Aktuelle Skalierung für das interne Rendering
+    // Transformation wird nicht mehr direkt benötigt, da wir mit Pixeln arbeiten und dann umrechnen
+    // private AffineTransform screenDeviceTransform = new AffineTransform();
 
+    private List<AreaDefinition> areasOnPage = new ArrayList<>(); // Definierte Bereiche für die AKTUELLE Seite
+    private Point dragStartPointPixels; // Startpunkt des Mausziehens in Pixeln
+    private Point dragEndPointPixels;   // Endpunkt des Mausziehens in Pixeln
+    private boolean isDragging = false; // Flag, ob gerade ein Rechteck gezogen wird
 
-    private List<AreaDefinition> areasOnPage = new ArrayList<>(); // Bereiche für die aktuelle Seite
-    private Point startPointPixels; // Startpunkt beim Ziehen (in Pixel-Koordinaten)
-    private Rectangle currentSelectionRectPixels; // Aktuell gezeichnetes Rechteck (in Pixel-Koordinaten)
-
+    /**
+     * Konstruktor. Setzt Hintergrund und Maus-Listener.
+     */
     public PdfAreaSelectorPanel() {
-        this.setBackground(Color.LIGHT_GRAY);
-        AreaMouseListener listener = new AreaMouseListener();
+        this.setBackground(Color.DARK_GRAY); // Hintergrund für besseren Kontrast zum weißen PDF
+        AreaMouseListener listener = new AreaMouseListener(); // Eigener Listener für Mausaktionen
         this.addMouseListener(listener);
         this.addMouseMotionListener(listener);
-        this.setAutoscrolls(true); // Ermöglicht Scrollen in JScrollPane
+        this.setAutoscrolls(true); // Wichtig für die Verwendung in JScrollPane
     }
 
+    // --- PDF Dokumenten-Handling ---
+
+    /**
+     * Lädt ein neues PDF-Dokument zur Anzeige. Schließt ein eventuell vorher geladenes.
+     * Zeigt standardmäßig die erste Seite an.
+     * @param document Das PDDocument, das geladen werden soll.
+     */
     public void loadDocument(PDDocument document) {
-        closeDocument();
+        closeDocument(); // Schließe ggf. altes Dokument
         this.currentDocument = document;
         if (this.currentDocument != null) {
             this.pdfRenderer = new PDFRenderer(this.currentDocument);
-            setPage(0); // Zeige erste Seite
+            setPage(0); // Zeige erste Seite (Index 0)
         } else {
-            resetPanelState();
+            resetPanelState(); // Kein Dokument -> Zustand zurücksetzen
         }
     }
 
+    /**
+     * Schließt das aktuell geladene PDF-Dokument und gibt Ressourcen frei.
+     * Setzt den Zustand des Panels zurück.
+     */
+    public void closeDocument() {
+        if (currentDocument != null) {
+            try {
+                currentDocument.close();
+                log.debug("PDDocument geschlossen.");
+            } catch (IOException e) {
+                log.error("Fehler beim Schließen des PDDocuments: {}", e.getMessage());
+            }
+        }
+        resetPanelState(); // Setzt alle internen Variablen zurück
+    }
+
+    /**
+     * Setzt den Zustand des Panels zurück (kein Dokument, kein Bild etc.).
+     */
+    private void resetPanelState() {
+        currentDocument = null;
+        pdfRenderer = null;
+        pageImage = null;
+        areasOnPage.clear(); // Keine Bereiche mehr anzeigen
+        currentPageNumber = -1; // Keine Seite ausgewählt
+        dragStartPointPixels = null;
+        dragEndPointPixels = null;
+        isDragging = false;
+        setPreferredSize(new Dimension(400, 500)); // Setze eine Standardgröße
+        revalidate(); // Layout neu berechnen
+        repaint();    // Neu zeichnen (zeigt dann "Kein PDF geladen")
+    }
+
+    // --- Seiten-Handling ---
+
+    /**
+     * Setzt die aktuell anzuzeigende Seite.
+     * Löscht vorhandene Bereichsmarkierungen und rendert die neue Seite.
+     * @param pageIndex Der 0-basierte Index der anzuzeigenden Seite.
+     */
     public void setPage(int pageIndex) {
-        if (pdfRenderer == null || pageIndex < 0 || pageIndex >= currentDocument.getNumberOfPages()) {
-            log.warn("Ungültiger Seitenindex: {}", pageIndex);
-            resetPanelState();
+        if (pdfRenderer == null || currentDocument == null || pageIndex < 0 || pageIndex >= currentDocument.getNumberOfPages()) {
+            log.warn("Ungültiger Seitenindex angefordert: {} (Gesamtseiten: {})", pageIndex, getTotalPages());
+            resetPanelState(); // Bei ungültigem Index alles zurücksetzen
             return;
         }
+        log.debug("Wechsle zu Seite {}", pageIndex + 1);
         this.currentPageNumber = pageIndex;
-        this.areasOnPage.clear();
-        this.currentSelectionRectPixels = null;
-        renderPage();
+        this.areasOnPage.clear(); // Bereiche der alten Seite löschen (müssen extern verwaltet werden)
+        this.dragStartPointPixels = null; // Aktuelle Auswahl zurücksetzen
+        this.dragEndPointPixels = null;
+        this.isDragging = false;
+        renderPage(); // Neue Seite rendern
     }
 
-    // Setzt die Bereiche, die für die aktuelle Seite gelten sollen
-    public void setAreas(List<AreaDefinition> areas) {
-        this.areasOnPage = new ArrayList<>(areas != null ? areas : Collections.emptyList());
-        log.debug("Setze {} Bereiche für Seite {}", this.areasOnPage.size(), this.currentPageNumber + 1);
-        repaint();
-    }
-
-    // Gibt die aktuell auf dem Panel definierten Bereiche zurück (für die aktuelle Seite)
-    public List<AreaDefinition> getAreas() {
-        return new ArrayList<>(this.areasOnPage);
-    }
-
-     public int getCurrentPageNumber() { // Gibt 0-basierten Index zurück
+    /**
+     * Gibt den 0-basierten Index der aktuell angezeigten Seite zurück.
+     * @return Der Seitenindex oder -1, wenn keine Seite angezeigt wird.
+     */
+     public int getCurrentPageNumber() {
          return currentPageNumber;
      }
 
+     /**
+      * Gibt die Gesamtzahl der Seiten im aktuell geladenen Dokument zurück.
+      * @return Die Seitenanzahl oder 0, wenn kein Dokument geladen ist.
+      */
      public int getTotalPages() {
          return (currentDocument != null) ? currentDocument.getNumberOfPages() : 0;
      }
 
-    // Rendert die aktuelle Seite
+
+    // --- Bereichs-Handling (Areas) ---
+
+    /**
+     * Setzt die Liste der Bereiche, die auf der aktuell angezeigten Seite
+     * dargestellt werden sollen. Ersetzt alle vorhandenen Bereiche.
+     * @param areas Eine Liste von {@link AreaDefinition}-Objekten. Kann null oder leer sein.
+     */
+     public void setAreas(List<AreaDefinition> areas) {
+         this.areasOnPage = new ArrayList<>(areas != null ? areas : Collections.emptyList());
+         log.debug("Setze {} Bereiche für Seite {}", this.areasOnPage.size(), this.currentPageNumber + 1);
+         repaint(); // Neu zeichnen, um die gesetzten Bereiche anzuzeigen
+     }
+
+     /**
+      * Gibt eine Kopie der Liste der aktuell auf dem Panel definierten Bereiche zurück
+      * (diese gelten nur für die aktuell angezeigte Seite).
+      * @return Eine Kopie der Liste der Bereiche.
+      */
+     public List<AreaDefinition> getAreas() {
+         // Gib immer eine Kopie zurück, um externe Modifikationen zu verhindern
+         return new ArrayList<>(this.areasOnPage);
+     }
+
+     /**
+      * Entfernt einen spezifischen Bereich aus der Anzeige auf der aktuellen Seite.
+      * @param area Der zu entfernende Bereich.
+      */
+     public void removeArea(AreaDefinition area) {
+         if (area != null) {
+             boolean removed = this.areasOnPage.remove(area); // Entferne aus interner Liste
+             if (removed) {
+                 log.debug("Bereich entfernt: {}", area);
+                 repaint(); // Zeichne Panel neu
+                 // Feuere Event, damit der Dialog die JList aktualisieren kann
+                 firePropertyChange("areasChanged", null, getAreas());
+             } else {
+                 log.warn("Zu entfernender Bereich {} nicht in der Liste gefunden.", area);
+             }
+         }
+     }
+
+    // --- Zoom Handling ---
+
+    /** Vergrößert die Anzeige der aktuellen Seite. */
+    public void zoomIn() {
+        changeZoom(1.25f); // Faktor für Vergrößerung (z.B. 25%)
+    }
+
+    /** Verkleinert die Anzeige der aktuellen Seite. */
+    public void zoomOut() {
+        changeZoom(0.8f); // Faktor für Verkleinerung (z.B. 20%, entspricht 1 / 1.25)
+    }
+
+    /**
+     * Ändert die Render-Skalierung und rendert die Seite neu.
+     * @param factor Der Faktor, um den die Skalierung geändert wird (> 1 für Zoom In, < 1 für Zoom Out).
+     */
+    private void changeZoom(float factor) {
+         if (pageImage == null) return; // Zoomen nur möglich, wenn Bild da ist
+         float newScale = currentRenderScale * factor;
+         // Begrenze den Zoom auf sinnvolle Werte (optional)
+         newScale = Math.max(0.2f, Math.min(newScale, 8.0f)); // Min 20%, Max 800%
+         if (Math.abs(newScale - currentRenderScale) > 0.01f) { // Nur neu rendern, wenn sich Skala ändert
+            log.info("Ändere Zoom von {} auf {}", currentRenderScale, newScale);
+            currentRenderScale = newScale;
+            renderPage(); // Seite mit neuer Skalierung neu rendern
+         }
+    }
+
+    // --- Rendering ---
+
+    /**
+     * Rendert die aktuelle Seite als Bild mit der aktuellen {@code currentRenderScale}.
+     */
     private void renderPage() {
         if (pdfRenderer != null && currentPageNumber >= 0) {
             try {
-            	// Wähle eine feste DPI für das Rendering
-                int dpi = 150; // Gute Balance zwischen Qualität und Performance/Speicher
-                log.debug("Rendere Seite {} mit {} DPI...", currentPageNumber + 1, dpi);
-                currentPageImage = pdfRenderer.renderImageWithDPI(currentPageNumber, dpi);
-
-                // Berechne den Skalierungsfaktor, der dieser DPI entspricht
-                // Standard PDF DPI ist 72 points per inch
-                this.renderScale = dpi / 72.0f;
-
+                // Rendere mit der aktuellen Skalierung
+                log.debug("Rendere Seite {} mit Skalierung {}...", currentPageNumber + 1, currentRenderScale);
+                // renderImage verwendet die Skalierung direkt
+                pageImage = pdfRenderer.renderImage(currentPageNumber, currentRenderScale);
                 // Passe die bevorzugte Größe des Panels an das gerenderte Bild an
-                setPreferredSize(new Dimension(currentPageImage.getWidth(), currentPageImage.getHeight()));
-                revalidate(); // Wichtig für JScrollPane
-                repaint();
-                log.debug("Seite {} gerendert ({}x{} Pixel, entspricht Scale ~{:.2f})",
-                          currentPageNumber + 1, currentPageImage.getWidth(), currentPageImage.getHeight(), renderScale);
+                setPreferredSize(new Dimension(pageImage.getWidth(), pageImage.getHeight()));
+                revalidate(); // Teile dem ScrollPane die neue Größe mit
+                repaint();    // Zeichne das neue Bild
+                log.debug("Seite {} gerendert ({}x{} Pixel @ Scale {})",
+                          currentPageNumber + 1, pageImage.getWidth(), pageImage.getHeight(), currentRenderScale);
             } catch (IOException e) {
-            	log.error("Fehler beim Rendern der PDF-Seite {}: {}", currentPageNumber + 1, e.getMessage());
-                currentPageImage = null; // Setze Bild zurück
-                setPreferredSize(new Dimension(400, 500)); // Gehe zu Default zurück
-                revalidate();
-                repaint();
+                log.error("Fehler beim Rendern der PDF-Seite {}: {}", currentPageNumber + 1, e.getMessage());
+                resetPanelState(); // Bei Fehler zurücksetzen
             }
         } else {
-            // Kein Dokument oder keine gültige Seite ausgewählt
-            currentPageImage = null;
-            setPreferredSize(new Dimension(400, 500));
-            revalidate();
-            repaint();
-       }
-    }
-
-    // Schließt das PDF und setzt Panel zurück
-    public void closeDocument() {
-        if (currentDocument != null) {
-            try { currentDocument.close(); log.debug("PDDocument geschlossen."); }
-            catch (IOException e) { log.error("Fehler beim Schließen des PDDocuments: {}", e.getMessage()); }
+             resetPanelState(); // Kein Dokument -> zurücksetzen
         }
-        resetPanelState();
     }
 
-    // Setzt den Zustand des Panels zurück
-    private void resetPanelState() {
-        currentDocument = null;
-        pdfRenderer = null;
-        currentPageImage = null;
-        areasOnPage.clear();
-        currentPageNumber = -1;
-        startPointPixels = null;
-        currentSelectionRectPixels = null;
-        setPreferredSize(new Dimension(400, 500)); // Standardgröße
-        revalidate();
-        repaint();
-    }
-
+    /**
+     * Zeichnet die Komponente: das PDF-Seitenbild und die Auswahlrechtecke.
+     * @param g Das Graphics-Objekt zum Zeichnen.
+     */
     @Override
     protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        if (currentPageImage != null) {
-            // Zeichne das gerenderte PDF-Bild
-            g.drawImage(currentPageImage, 0, 0, this);
+        super.paintComponent(g); // Rufe die Superklasse auf (wichtig!)
+        Graphics2D g2d = (Graphics2D) g.create(); // Erstelle eine Kopie des Graphics-Objekts
 
-            Graphics2D g2d = (Graphics2D) g;
-            g2d.setStroke(new BasicStroke(1)); // Dünne Linie
+        try {
+            if (pageImage != null) {
+                // Zeichne das gerenderte PDF-Bild an Position (0,0)
+                g2d.drawImage(pageImage, 0, 0, this);
 
-            // Zeichne bereits definierte Bereiche
-            g2d.setColor(new Color(0, 0, 255, 60)); // Blau, halbtransparent für Füllung
-            Stroke defaultStroke = g2d.getStroke();
-            Stroke dashedStroke = new BasicStroke(1, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL, 0, new float[]{3}, 0); // Gestrichelte Linie
+                // --- Zeichne definierte Bereiche (blau, halbtransparent) ---
+                g2d.setStroke(new BasicStroke(1)); // Dünne Linie für Umrandung
+                Color areaFillColor = new Color(0, 0, 255, 60); // Blau, halbtransparent
+                Color areaBorderColor = Color.BLUE;
 
-            for (AreaDefinition area : areasOnPage) {
-                Rectangle pixelRect = transformPdfAreaToSwingPixels(area);
-                if (pixelRect != null) {
-                    g2d.fill(pixelRect); // Fülle den Bereich
-                    g2d.setColor(Color.BLUE); // Blaue Umrandung
-                    g2d.setStroke(dashedStroke); // Gestrichelt
-                    g2d.draw(pixelRect); // Zeichne Umrandung
-                    g2d.setColor(new Color(0, 0, 255, 60)); // Farbe für nächste Füllung wiederherstellen
-                    g2d.setStroke(defaultStroke); // Strich wieder normal
+                for (AreaDefinition area : areasOnPage) {
+                    // Transformiere PDF-Bereichskoordinaten in Pixelkoordinaten für die Anzeige
+                    Rectangle pixelRect = transformPdfAreaToSwingPixels(area);
+                    if (pixelRect != null) {
+                        g2d.setColor(areaFillColor);
+                        g2d.fill(pixelRect); // Fülle den Bereich
+                        g2d.setColor(areaBorderColor);
+                        g2d.draw(pixelRect); // Zeichne die Umrandung
+                    }
                 }
-            }
 
-            // Zeichne das aktuell vom Benutzer gezogene Rechteck (rote Linie)
-            if (currentSelectionRectPixels != null) {
-                g2d.setColor(Color.RED);
-                g2d.setStroke(defaultStroke); // Normale Linie
-                g2d.draw(currentSelectionRectPixels);
+                // --- Zeichne das aktuelle Auswahlrechteck (während des Ziehens, rot) ---
+                if (isDragging && dragStartPointPixels != null && dragEndPointPixels != null) {
+                    g2d.setColor(Color.RED);
+                    g2d.setStroke(new BasicStroke(1)); // Normale, durchgezogene Linie
+                    // Berechne die Eckpunkte und Größe des Rechtecks in Pixeln
+                    int x = Math.min(dragStartPointPixels.x, dragEndPointPixels.x);
+                    int y = Math.min(dragStartPointPixels.y, dragEndPointPixels.y);
+                    int width = Math.abs(dragStartPointPixels.x - dragEndPointPixels.x);
+                    int height = Math.abs(dragStartPointPixels.y - dragEndPointPixels.y);
+                    g2d.drawRect(x, y, width, height); // Zeichne das Rechteck
+                }
+            } else {
+                // Zeige Platzhaltertext, wenn kein PDF geladen ist
+                g2d.setColor(Color.WHITE); // Helle Farbe auf dunklem Hintergrund
+                FontMetrics fm = g2d.getFontMetrics();
+                String text = "Kein Vorschau-PDF geladen.";
+                int x = (getWidth() - fm.stringWidth(text)) / 2;
+                int y = (getHeight() - fm.getHeight()) / 2 + fm.getAscent();
+                g2d.drawString(text, x, y);
             }
-        } else {
-            // Platzhaltertext, wenn kein PDF geladen ist
-            g.setColor(Color.DARK_GRAY);
-            g.drawString("Kein PDF geladen oder Seite kann nicht angezeigt werden.", 20, 30);
+        } finally {
+            g2d.dispose(); // Gib die Graphics-Kopie immer frei!
         }
     }
 
-    // --- Koordinatentransformation (VEREINFACHT) ---
+    // --- Koordinatentransformation (VEREINFACHT: Keine Rotation) ---
 
     /**
      * Transformiert einen Punkt von Swing-Pixel-Koordinaten (Ursprung oben links)
      * in PDF-Punkt-Koordinaten (Ursprung unten links).
-     * VEREINFACHT: Ignoriert Rotation, geht von Standard-Boxen aus.
+     * Berücksichtigt die aktuelle Render-Skalierung und die PDF-Seitenbox.
+     * VEREINFACHT: Ignoriert Seitenrotation.
+     *
+     * @param swingPixels Der Punkt in Pixelkoordinaten relativ zum Panel.
+     * @return Der Punkt in PDF-Koordinaten oder null bei Fehlern.
      */
     private Point2D.Float transformSwingPixelsToPdfPoints(Point swingPixels) {
-        if (currentDocument == null || currentPageNumber < 0 || swingPixels == null || currentPageImage == null) return null;
+        if (currentDocument == null || currentPageNumber < 0 || swingPixels == null || pageImage == null) return null;
 
         try {
             PDPage page = currentDocument.getPage(currentPageNumber);
-            PDRectangle pageSize = page.getCropBox(); // Oder MediaBox
-            if (pageSize == null) pageSize = page.getMediaBox();
-            if (pageSize == null) return null;
+            // Verwende CropBox als primäre Referenz, sonst MediaBox
+            PDRectangle box = page.getCropBox();
+            if (box == null) box = page.getMediaBox();
+            if (box == null) { log.warn("Keine Page Size Box gefunden für Seite {}", currentPageNumber+1); return null; }
 
-            float pageHeightPdfPoints = pageSize.getHeight();
+            float pageHeightPdfPoints = box.getHeight(); // Höhe der Seite in PDF-Punkten
 
-            // Skaliere Pixel zurück zu PDF-Punkten unter Berücksichtigung der Render-Skalierung
-            // Annahme: Das gerenderte Bild (currentPageImage) entspricht der Größe der pageSize * renderScale
-            float pdfX_relative = (float) (swingPixels.x / renderScale);
-            float pdfY_relative_from_top = (float) (swingPixels.y / renderScale);
+            // Skaliere Pixel zurück zu relativen PDF-Einheiten (bezogen auf den Box-Ursprung)
+            // basierend auf der Skalierung, mit der das Bild gerendert wurde.
+            float pdfXRel = (float) (swingPixels.x / currentRenderScale);
+            float pdfYRelFromTop = (float) (swingPixels.y / currentRenderScale);
 
-            // Transformiere Y-Koordinate (Oben-Links -> Unten-Links)
-            float pdfY_relative_from_bottom = pageHeightPdfPoints - pdfY_relative_from_top;
+            // Konvertiere Y-Koordinate von "Abstand von oben" zu "Abstand von unten"
+            float pdfYRelFromBottom = pageHeightPdfPoints - pdfYRelFromTop;
 
-            // Addiere den Ursprung der PDF-Box (untere linke Ecke)
-            float finalX = pdfX_relative + pageSize.getLowerLeftX();
-            float finalY = pdfY_relative_from_bottom + pageSize.getLowerLeftY();
+            // Addiere den Ursprung der PDF-Box (untere linke Ecke) hinzu
+            float finalX = pdfXRel + box.getLowerLeftX();
+            float finalY = pdfYRelFromBottom + box.getLowerLeftY(); // Y von unten
 
-            // TODO: Rotation berücksichtigen!
+            // TODO: Seitenrotation muss hier berücksichtigt werden für korrekte Koordinaten!
 
             return new Point2D.Float(finalX, finalY);
 
@@ -233,110 +340,122 @@ public class PdfAreaSelectorPanel extends JPanel {
 
      /**
       * Transformiert einen Bereich von PDF-Koordinaten (Ursprung unten links)
-      * in Swing-Pixel-Koordinaten (Ursprung oben links).
-      * VEREINFACHT: Ignoriert Rotation.
+      * in Swing-Pixel-Koordinaten (Ursprung oben links) für die Anzeige.
+      * Berücksichtigt die aktuelle Render-Skalierung und die PDF-Seitenbox.
+      * VEREINFACHT: Ignoriert Seitenrotation.
+      *
+      * @param pdfArea Der Bereich in PDF-Koordinaten.
+      * @return Das Rechteck in Swing-Pixelkoordinaten oder null bei Fehlern.
       */
-    private Rectangle transformPdfAreaToSwingPixels(AreaDefinition pdfArea) {
-        if (currentDocument == null || currentPageNumber < 0 || pdfArea == null || currentPageImage == null) return null;
+     private Rectangle transformPdfAreaToSwingPixels(AreaDefinition pdfArea) {
+         if (currentDocument == null || currentPageNumber < 0 || pdfArea == null || pageImage == null) return null;
 
-        try {
-            PDPage page = currentDocument.getPage(currentPageNumber);
-            PDRectangle pageSize = page.getCropBox();
-            if (pageSize == null) pageSize = page.getMediaBox();
-            if (pageSize == null) return null;
+         try {
+             PDPage page = currentDocument.getPage(currentPageNumber);
+             PDRectangle box = page.getCropBox(); if (box == null) box = page.getMediaBox(); if (box == null) return null;
 
-            float pageHeightPdfPoints = pageSize.getHeight();
+             float pageHeightPdfPoints = box.getHeight();
 
-            // PDF-Koordinaten des Bereichs (relativ zum Seitenursprung 0,0 unten links)
-            float pdfX1 = pdfArea.getX1();
-            float pdfY1_bottom = pdfArea.getY1(); // Untere Y-Koordinate
-            float pdfWidth = pdfArea.getWidth();
-            float pdfHeight = pdfArea.getHeight();
-            float pdfY2_top = pdfY1_bottom + pdfHeight; // Obere Y-Koordinate im PDF-System
+             // PDF-Koordinaten des Bereichs (absolut, Ursprung unten links)
+             float pdfX1 = pdfArea.getX1();
+             float pdfY1_bottom = pdfArea.getY1(); // Untere Y-Koordinate
+             float pdfWidth = pdfArea.getWidth();
+             float pdfHeight = pdfArea.getHeight();
+             float pdfY2_top = pdfY1_bottom + pdfHeight; // Obere Y-Koordinate im PDF-System
 
-            // Berücksichtige den Ursprung der PDF-Box
-            float pdfX1_relative = pdfX1 - pageSize.getLowerLeftX();
-            // float pdfY1_relative_from_bottom = pdfY1_bottom - pageSize.getLowerLeftY(); // Wird nicht direkt gebraucht
-            float pdfY2_relative_from_bottom = pdfY2_top - pageSize.getLowerLeftY();
+             // Mache Koordinaten relativ zum Ursprung der Box (oft nicht 0,0)
+             float pdfX1_relative = pdfX1 - box.getLowerLeftX();
+             float pdfY2_relative_from_bottom = pdfY2_top - box.getLowerLeftY(); // Obere Y relativ zu unten links der Box
 
-            // Transformiere obere Y-Koordinate von PDF (unten-links) zu Swing (oben-links)
-            float pdfY2_relative_from_top = pageHeightPdfPoints - pdfY2_relative_from_bottom;
+             // Transformiere obere Y-Koordinate zu "Abstand von oben" (relativ zur Box)
+             float pdfY_relative_from_top = pageHeightPdfPoints - pdfY2_relative_from_bottom;
 
-            // Skaliere zu Pixeln mit der Render-Skalierung
-            int swingX = Math.round(pdfX1_relative * renderScale);
-            int swingY = Math.round(pdfY2_relative_from_top * renderScale); // Obere linke Ecke Y in Pixeln
-            int swingWidth = Math.round(pdfWidth * renderScale);
-            int swingHeight = Math.round(pdfHeight * renderScale);
+             // Skaliere zu Pixeln mit der aktuellen Render-Skalierung
+             // Runde auf ganze Pixel für die Darstellung
+             int swingX = Math.round(pdfX1_relative * currentRenderScale);
+             int swingY = Math.round(pdfY_relative_from_top * currentRenderScale); // Obere linke Ecke Y in Pixeln
+             int swingWidth = Math.round(pdfWidth * currentRenderScale);
+             int swingHeight = Math.round(pdfHeight * currentRenderScale);
 
-             // TODO: Rotation berücksichtigen!
+              // TODO: Seitenrotation muss hier berücksichtigt werden!
 
-            return new Rectangle(swingX, swingY, swingWidth, swingHeight);
+             return new Rectangle(swingX, swingY, swingWidth, swingHeight);
 
-        } catch (Exception e) {
-            log.error("Fehler bei PDF -> Swing Koordinatentransformation: {}", e.getMessage());
-            return null;
-        }
-    }
+         } catch (Exception e) {
+             log.error("Fehler bei PDF -> Swing Koordinatentransformation: {}", e.getMessage());
+             return null;
+         }
+     }
 
-    // --- Mouse Listener für Bereichsauswahl ---
+    // --- Innerer Mouse Listener für Bereichsauswahl ---
     private class AreaMouseListener extends MouseAdapter {
         @Override
         public void mousePressed(MouseEvent e) {
-            if (currentPageImage == null || !isEnabled()) return; // Nur wenn aktiv
-            startPointPixels = e.getPoint();
-            currentSelectionRectPixels = new Rectangle();
-            log.trace("MousePressed bei Pixel: {}", startPointPixels);
+            // Beginne nur mit dem Ziehen, wenn ein Bild angezeigt wird und das Panel aktiv ist
+            if (pageImage == null || !isEnabled()) return;
+            dragStartPointPixels = e.getPoint(); // Merke Startpunkt in Pixeln
+            dragEndPointPixels = dragStartPointPixels;   // Endpunkt initial auf Startpunkt
+            isDragging = true; // Markiere, dass gezogen wird
+            log.trace("MousePressed bei Pixel: {}", dragStartPointPixels);
+            repaint(); // Zeichne neu (könnte nützlich sein, um alte Auswahl zu löschen)
         }
 
         @Override
         public void mouseDragged(MouseEvent e) {
-            if (startPointPixels == null || currentPageImage == null || !isEnabled()) return;
-            Point endPointPixels = e.getPoint();
-            // Berechne Rechteck in Pixeln für die Anzeige
-            int x = Math.min(startPointPixels.x, endPointPixels.x);
-            int y = Math.min(startPointPixels.y, endPointPixels.y);
-            int width = Math.abs(startPointPixels.x - endPointPixels.x);
-            int height = Math.abs(startPointPixels.y - endPointPixels.y);
-            currentSelectionRectPixels = new Rectangle(x, y, width, height);
-            repaint(); // Panel neu zeichnen, um Auswahlrechteck anzuzeigen
+            // Aktualisiere nur, wenn gerade gezogen wird
+            if (!isDragging || pageImage == null || !isEnabled()) return;
+            dragEndPointPixels = e.getPoint(); // Aktualisiere Endpunkt in Pixeln
+            repaint(); // Zeichne Panel neu, um das rote Auswahlrechteck anzuzeigen
         }
 
         @Override
         public void mouseReleased(MouseEvent e) {
-             if (startPointPixels == null || currentSelectionRectPixels == null || currentPageImage == null || !isEnabled()) return;
-             log.trace("MouseReleased");
+             // Beende nur, wenn gerade gezogen wurde
+             if (!isDragging || dragStartPointPixels == null || pageImage == null || !isEnabled()) return;
+             isDragging = false; // Ziehen ist beendet
+             dragEndPointPixels = e.getPoint(); // Finaler Endpunkt in Pixeln
+             log.trace("MouseReleased bei Pixel: {}", dragEndPointPixels);
 
-             // Verhindere zu kleine Rechtecke
-             if (currentSelectionRectPixels.width < 5 || currentSelectionRectPixels.height < 5) {
+             // Berechne das finale Auswahlrechteck in Pixeln
+             int x = Math.min(dragStartPointPixels.x, dragEndPointPixels.x);
+             int y = Math.min(dragStartPointPixels.y, dragEndPointPixels.y);
+             int width = Math.abs(dragStartPointPixels.x - dragEndPointPixels.x);
+             int height = Math.abs(dragStartPointPixels.y - dragEndPointPixels.y);
+             Rectangle selectionPx = new Rectangle(x, y, width, height);
+
+             // Verhindere zu kleine oder invalide Rechtecke
+             if (selectionPx.width < 5 || selectionPx.height < 5) {
                  log.debug("Auswahlrechteck zu klein, ignoriert.");
              } else {
-                 // Transformiere Start- und Endpunkte (in Pixeln) in PDF-Koordinaten
-                 Point endPointPixels = e.getPoint();
-                 Point2D.Float pdfP1 = transformSwingPixelsToPdfPoints(startPointPixels);
-                 Point2D.Float pdfP2 = transformSwingPixelsToPdfPoints(endPointPixels);
+                 // Transformiere die Pixel-Eckpunkte in PDF-Koordinaten
+                 Point2D.Float pdfP1 = transformSwingPixelsToPdfPoints(dragStartPointPixels);
+                 Point2D.Float pdfP2 = transformSwingPixelsToPdfPoints(dragEndPointPixels);
 
+                 // Nur fortfahren, wenn Transformation erfolgreich war
                  if (pdfP1 != null && pdfP2 != null) {
-                     // Erstelle AreaDefinition (Konstruktor sortiert Koordinaten x1<=x2, y1<=y2)
+                     // Erstelle das AreaDefinition-Objekt (Konstruktor sortiert Ecken)
                      AreaDefinition newArea = new AreaDefinition(pdfP1.x, pdfP1.y, pdfP2.x, pdfP2.y);
                      log.info("Neuen Bereich hinzugefügt (PDF Koordinaten): {}", newArea);
 
-                     // Füge Bereich zur Liste der aktuellen Seite hinzu
+                     // Füge den neuen Bereich zur Liste für die aktuelle Seite hinzu
                      areasOnPage.add(newArea);
 
-                     // Benachrichtige den Dialog, dass sich die Bereiche geändert haben
-                     firePropertyChange("areasChanged", null, getAreas()); // Event feuern
+                     // Feuere ein Event, um den Dialog (z.B. die JList) zu benachrichtigen
+                     // Übergibt die (aktualisierte) Liste der Bereiche für DIESE Seite
+                     firePropertyChange("areasChanged", null, getAreas());
 
                  } else {
+                      // Fehler bei der Transformation
                       log.error("Konnte Auswahl nicht in PDF-Koordinaten umwandeln.");
                       JOptionPane.showMessageDialog(PdfAreaSelectorPanel.this,
-                              "Fehler bei der Koordinatentransformation.\nIst das PDF korrekt formatiert?",
+                              "Fehler bei der Koordinatentransformation.\nIst das PDF korrekt formatiert oder gedreht?",
                               "Transformationsfehler", JOptionPane.WARNING_MESSAGE);
                  }
              }
-             // Reset für nächste Auswahl
-             startPointPixels = null;
-             currentSelectionRectPixels = null;
-             repaint(); // Zeichne Panel neu (zeigt jetzt den hinzugefügten Bereich oder nichts)
+             // Setze Zieh-Variablen zurück für die nächste Auswahl
+             dragStartPointPixels = null;
+             dragEndPointPixels = null;
+             repaint(); // Zeichne Panel neu (ohne rotes Rechteck, aber mit neuem blauen Bereich)
         }
     }
 }
