@@ -15,21 +15,34 @@ public class MainApplication {
 
     public static void main(String[] args) {
         // Look and Feel setzen (optional, für besseres Aussehen der UI)
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            log.warn("Konnte System Look and Feel nicht setzen.", e);
-        }
+    	 try {
+             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+         } catch (Exception e) {
+             log.warn("System Look and Feel konnte nicht gesetzt werden.", e);
+         }
 
-        // Sicherstellen, dass die GUI-Erstellung im Event Dispatch Thread (EDT) erfolgt
-        SwingUtilities.invokeLater(() -> {
-            log.info("Initialisiere Anwendung...");
-            AnwendungsModell model = new AnwendungsModell();
-            MainFrame view = new MainFrame(model);
-            new AppController(model, view); // Controller verbindet Modell und View
+         // Erstellung der GUI immer im Event Dispatch Thread (EDT) sicherstellen
+         SwingUtilities.invokeLater(() -> {
+             log.info("Initialisiere Anwendung...");
 
-            view.setVisible(true);
-            log.info("Anwendung gestartet und View ist sichtbar.");
+             // 1. Modell erstellen (enthält die Daten und Geschäftslogik)
+             AnwendungsModell model = new AnwendungsModell();
+
+             // 2. Controller erstellen (benötigt nur das Modell für die Logik)
+             // Die View-Referenz wird später gesetzt.
+             AppController controller = new AppController(model);
+
+             // 3. View erstellen (benötigt das Modell, um Daten anzuzeigen)
+             // Der Controller wird hier NICHT übergeben.
+             MainFrame view = new MainFrame(model);
+
+             // 4. Listener im Controller initialisieren und View-Referenz setzen
+             // Jetzt, da die View existiert, kann der Controller seine Listener registrieren.
+             controller.initializeListeners(view);
+
+             // 5. Hauptfenster sichtbar machen
+             view.setVisible(true);
+             log.info("Anwendung gestartet und Hauptfenster ist sichtbar.");
         });
     }
 }
