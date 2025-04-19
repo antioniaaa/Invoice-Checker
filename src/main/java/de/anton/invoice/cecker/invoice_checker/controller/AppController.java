@@ -38,6 +38,16 @@ import java.util.Objects;
 //PDFBox für Keyword Suche
 import org.apache.pdfbox.pdmodel.PDDocument;
 
+import javax.swing.event.ChangeListener;
+import java.awt.event.ItemListener;
+import java.util.Comparator;
+import java.util.stream.Collectors;
+
+/**
+* Der Controller verbindet die View (MainFrame) mit dem Model (AnwendungsModell).
+* Er reagiert auf Benutzeraktionen und delegiert Aufgaben an das Modell.
+* Stößt explizit GUI-Updates nach Neuverarbeitung an.
+*/
 public class AppController {
  private static final Logger log = LoggerFactory.getLogger(AppController.class);
 
@@ -45,14 +55,22 @@ public class AppController {
  private final MainFrame view;
  private JFileChooser dateiAuswahlDialog;
 
+ /**
+  * Konstruktor. Initialisiert Modell und View und registriert die Listener.
+  * @param model Das Anwendungsmodell.
+  * @param view Das Hauptfenster (GUI).
+  */
  public AppController(AnwendungsModell model, MainFrame view) {
      this.model = model;
      this.view = view;
      initController();
  }
 
+ /**
+  * Registriert alle notwendigen Listener bei den GUI-Komponenten.
+  * Lädt initiale Konfigurationen.
+  */
  private void initController() {
-     // Listener registrieren
      view.addLadeButtonListener(this::handleLadePdfAktion);
      view.addExportButtonListener(this::handleExportExcelAktion);
      view.addRefreshButtonListener(this::handleRefreshAction);
@@ -68,6 +86,9 @@ public class AppController {
      updateAvailableConfigsInView(); // Lade Bereichs-Konfigs beim Start
  }
 
+ /**
+  * Konfiguriert den JFileChooser.
+  */
  private void setupDateiAuswahlDialog() {
      dateiAuswahlDialog = new JFileChooser();
      dateiAuswahlDialog.setFileFilter(new FileNameExtensionFilter("PDF Dokumente", "pdf"));
@@ -96,10 +117,23 @@ public class AppController {
               view.setProgressBarVisible(true); view.setProgressBarValue(0);
 
               Map<String, String> parameterGui = getCurrentParametersFromGui();
-              // Rufe Modell auf (überladene Methode ohne explizite Konfig)
-              model.ladeUndVerarbeitePdfs(pdfPfade, parameterGui,
-                 processedDoc -> { /* Callback Status */ if(processedDoc!=null) SwingUtilities.invokeLater(()->view.setStatus("Verarbeitet:"+processedDoc.getSourcePdf()+(processedDoc.getError()!=null?" [F]":""))); else log.info("Callback (null doc)");},
-                 progress -> { /* Callback Progress */ SwingUtilities.invokeLater(()->{view.setProgressBarValue((int)(progress*100)); if(progress>=1.0){ Timer t=new Timer(2000,ae->view.setProgressBarVisible(false)); t.setRepeats(false);t.start();}}); }
+              ExtractionConfiguration aktiveConfig = model.getAktiveKonfiguration();
+              log.info("--> Verwende Parameter: {} und aktive Bereichs-Konfig: {}", parameterGui, (aktiveConfig != null ? aktiveConfig.getName() : "Keine"));
+
+              // Rufe Modell auf
+              model.ladeUndVerarbeitePdfsMitKonfiguration(pdfPfade, parameterGui, aktiveConfig,
+                 processedDoc -> { // Callback für Status
+                     if (processedDoc != null) {
+                          log.info("Callback nach Verarbeitung empfangen für: {}", processedDoc.getSourcePdf());
+                          SwingUtilities.invokeLater(() -> view.setStatus("Verarbeitet: " + processedDoc.getSourcePdf() + (processedDoc.getError() != null ? " [FEHLER]" : "")));
+                     } else { log.info("Callback empfangen (Dokument war null)."); }
+                 },
+                 progress -> { // Callback für Fortschritt
+                      SwingUtilities.invokeLater(() -> {
+                           view.setProgressBarValue((int) (progress * 100));
+                           if (progress >= 1.0) { Timer t = new Timer(2000, ae -> view.setProgressBarVisible(false)); t.setRepeats(false); t.start();}
+                      });
+                 }
               );
           } else { log.warn("Keine Dateien ausgewählt."); view.setStatus("Keine Dateien ausgewählt.");}
       } else { log.info("Dateiauswahl abgebrochen."); view.setStatus("Dateiauswahl abgebrochen.");}
@@ -122,8 +156,8 @@ public class AppController {
           PdfDokument selectedDoc = (PdfDokument) view.getPdfComboBox().getSelectedItem();
           if (!Objects.equals(model.getAusgewaehltesDokument(), selectedDoc)) {
               log.info("PDF ComboBox Auswahl geändert zu: {}", (selectedDoc != null ? selectedDoc.getSourcePdf() : "null"));
-              model.setAusgewaehltesDokument(selectedDoc);
-              updateInvoiceTypePanel(selectedDoc); // <- Wichtig: Panel aktualisieren
+              model.setAusgewaehltesDokument(selectedDoc); // Löst Events aus
+              updateInvoiceTypePanel(selectedDoc); // Aktualisiere Panel für neuen Typ
           }
      }
  }
@@ -133,7 +167,7 @@ public class AppController {
          ExtrahierteTabelle selectedTable = (ExtrahierteTabelle) view.getTabelleComboBox().getSelectedItem();
          if (selectedTable != null && !Objects.equals(model.getAusgewaehlteTabelle(), selectedTable)) {
               log.info("Tabellen ComboBox Auswahl geändert zu: {}", selectedTable);
-              model.setAusgewaehlteTabelle(selectedTable);
+              model.setAusgewaehlteTabelle(selectedTable); // Löst Event aus
           }
      }
  }
@@ -153,8 +187,8 @@ public class AppController {
       if (savedConfig != null) {
           log.info("Bereichs-Konfiguration '{}' wurde im Dialog gespeichert.", savedConfig.getName());
           updateAvailableConfigsInView(); // Liste neu laden
-          model.setAktiveKonfiguration(savedConfig); // Als aktiv setzen
-          triggerReprocessing("Bereichs-Konfiguration gespeichert");
+          model.setAktiveKonfiguration(savedConfig); // Als aktiv setzen (löst Event in View)
+          triggerReprocessing("Bereichs-Konfiguration gespeichert"); // Neu verarbeiten
       } else { log.info("Bereichs-Konfigurationsdialog geschlossen ohne Speichern."); }
  }
 
@@ -163,12 +197,12 @@ public class AppController {
          Object selectedItem = e.getItem();
          ExtractionConfiguration selectedConfig = null;
          if (selectedItem instanceof ExtractionConfiguration) { selectedConfig = (ExtractionConfiguration) selectedItem; }
-         else if (!"Keine".equals(selectedItem)) { log.warn("Unerwartetes Item in Konfig-Combo: {}", selectedItem); return; } // "Keine" -> null
+         else if (!"Keine".equals(selectedItem)) { log.warn("Unerwartetes Item in Konfig-Combo: {}", selectedItem); return; }
 
          log.info("Bereichs-Konfig Auswahl geändert zu: {}", (selectedConfig != null ? selectedConfig.getName() : "Keine"));
          if (!Objects.equals(model.getAktiveKonfiguration(), selectedConfig)) {
-              model.setAktiveKonfiguration(selectedConfig);
-              triggerReprocessing("Bereichs-Konfiguration geändert");
+              model.setAktiveKonfiguration(selectedConfig); // Löst Event aus
+              triggerReprocessing("Bereichs-Konfiguration geändert"); // Neuverarbeitung
          }
      }
  }
@@ -179,33 +213,71 @@ public class AppController {
 
  // --- Hilfsmethoden ---
 
+ /**
+  * Löst die Neuverarbeitung des aktuell im Modell ausgewählten PDF-Dokuments
+  * mit den aktuell in der GUI eingestellten Parametern und der im Modell aktiven Bereichs-Konfiguration aus.
+  * Stößt die GUI-Updates im Callback explizit an.
+  * @param grund Ein String, der den Grund für die Neuverarbeitung beschreibt (für Logging).
+  */
  private void triggerReprocessing(String grund) {
-      PdfDokument selectedDoc = model.getAusgewaehltesDokument();
-      if (selectedDoc != null && selectedDoc.getFullPath() != null && !selectedDoc.getFullPath().isBlank()) {
-          Path pdfPath = null;
-          try { pdfPath = Paths.get(selectedDoc.getFullPath()); }
-          catch (Exception pathEx) { log.error("Ungültiger Pfad: {}", selectedDoc.getFullPath(), pathEx); view.setStatus("Fehler: Ungültiger Pfad."); return; }
+     PdfDokument selectedDoc = model.getAusgewaehltesDokument();
+     if (selectedDoc != null && selectedDoc.getFullPath() != null && !selectedDoc.getFullPath().isBlank()) {
+         Path pdfPath = null;
+         try { pdfPath = Paths.get(selectedDoc.getFullPath()); }
+         catch (Exception pathEx) { log.error("Ungültiger Pfad: {}", selectedDoc.getFullPath(), pathEx); view.setStatus("Fehler: Ungültiger Pfad."); return; }
 
-          if (pdfPath != null) {
-              Map<String, String> aktuelleParameterGui = getCurrentParametersFromGui();
-              ExtractionConfiguration aktiveConfig = model.getAktiveKonfiguration();
+         if (pdfPath != null) {
+             Map<String, String> aktuelleParameterGui = getCurrentParametersFromGui();
+             ExtractionConfiguration aktiveConfig = model.getAktiveKonfiguration();
 
-              log.info("({}) Starte Neuverarbeitung für PDF: {} mit GUI-Parametern: {}, Bereichs-Konfig: {}", grund, selectedDoc.getSourcePdf(), aktuelleParameterGui, (aktiveConfig != null ? aktiveConfig.getName() : "Keine"));
-              view.setStatus("Verarbeite '" + selectedDoc.getSourcePdf() + "' neu...");
-              view.setProgressBarVisible(true); view.setProgressBarValue(0);
+             log.info("({}) Starte Neuverarbeitung für PDF: {} mit GUI-Parametern: {}, Bereichs-Konfig: {}",
+                      grund, selectedDoc.getSourcePdf(), aktuelleParameterGui, (aktiveConfig != null ? aktiveConfig.getName() : "Keine"));
+             view.setStatus("Verarbeite '" + selectedDoc.getSourcePdf() + "' neu...");
+             view.setProgressBarVisible(true); view.setProgressBarValue(0);
 
-              // Rufe Modell auf (Methode, die Konfig explizit nimmt)
-              model.ladeUndVerarbeitePdfsMitKonfiguration(
-                  Collections.singletonList(pdfPath),
-                  aktuelleParameterGui,
-                  aktiveConfig, // Übergib die aktuell aktive Konfig
-                  processedDoc -> { /* Callback Status */ if(processedDoc!=null) SwingUtilities.invokeLater(()->view.setStatus("Neu verarbeitet:"+processedDoc.getSourcePdf()+(processedDoc.getError()!=null?" [FEHLER]":"")));},
-                  progress -> { /* Callback Progress */ SwingUtilities.invokeLater(()->{view.setProgressBarValue((int)(progress*100)); if(progress>=1.0){ Timer t = new Timer(2000, ae -> view.setProgressBarVisible(false)); t.setRepeats(false); t.start();}}); }
-              );
-          }
-      } else { log.debug("({}) aber kein PDF ausgewählt oder Pfad fehlt. Keine Aktion.", grund); view.setStatus("Bitte zuerst ein PDF auswählen."); }
+             // Rufe Modell auf (Methode, die Konfig explizit nimmt)
+             model.ladeUndVerarbeitePdfsMitKonfiguration(
+                 Collections.singletonList(pdfPath),
+                 aktuelleParameterGui,
+                 aktiveConfig, // Übergib die aktuell aktive Konfig
+                 processedDoc -> { // Callback für Status nach Neuverarbeitung
+                     if (processedDoc != null) {
+                         log.info("Callback nach Neuverarbeitung empfangen für: {}", processedDoc.getSourcePdf());
+                         SwingUtilities.invokeLater(() -> { // Alles im EDT ausführen!
+                             view.setStatus("Neu verarbeitet: " + processedDoc.getSourcePdf() + (processedDoc.getError() != null ? " [FEHLER]" : ""));
+
+                             // --- EXPLIZITE GUI-UPDATES NACH NEUVERARBEITUNG ---
+                             log.info("Stoße explizite GUI-Updates nach Neuverarbeitung an...");
+                             // 1. PDF-ComboBox ist schon richtig (Dokument hat sich nicht geändert)
+                             // 2. Tabellen-ComboBox neu laden (Inhalt des Dokuments hat sich geändert!)
+                             view.updateTabelleComboBox();
+                             // 3. Daten-Tabelle aktualisieren (basierend auf der Auswahl in der Tabellen-Combo)
+                             view.updateDatenTabelle();
+                             // 4. InvoiceType Panel neu laden (falls sich was geändert haben könnte - unwahrscheinlich hier)
+                             // updateInvoiceTypePanel(processedDoc); // Normalerweise nicht nötig bei Reprocessing
+                             // --- ENDE EXPLIZITE UPDATES ---
+
+                         });
+                     } else {
+                         log.warn("Callback nach Neuverarbeitung: Dokument ist null.");
+                         SwingUtilities.invokeLater(() -> view.setStatus("Fehler bei Neuverarbeitung."));
+                     }
+                 },
+                 progress -> { // Callback für Fortschritt
+                      SwingUtilities.invokeLater(()->{
+                           view.setProgressBarValue((int)(progress*100));
+                           if(progress>=1.0){ Timer t = new Timer(2000, ae -> view.setProgressBarVisible(false)); t.setRepeats(false); t.start();}
+                      });
+                 }
+             );
+         }
+     } else {
+         log.debug("({}) aber kein PDF ausgewählt oder Pfad fehlt. Keine Aktion.", grund);
+         view.setStatus("Bitte zuerst ein PDF auswählen."); // Hinweis an User
+     }
  }
 
+ /** Liest Parameter aus GUI. */
  private Map<String, String> getCurrentParametersFromGui() {
       Map<String,String> p = new HashMap<>();
       try {
@@ -216,6 +288,7 @@ public class AppController {
       return p;
  }
 
+  /** Lädt verfügbare Bereichs-Konfigurationen und aktualisiert die View. */
   private void updateAvailableConfigsInView() {
       log.debug("Aktualisiere Bereichs-Konfigurations-ComboBox in der View...");
       List<ExtractionConfiguration> configs = model.getConfigurationService().loadAllConfigurations();
@@ -223,6 +296,7 @@ public class AppController {
       view.updateConfigurationComboBox(configs, activeConfig);
   }
 
+  /** Aktualisiert das Invoice Type Panel in der GUI basierend auf PDF-Inhalt. */
   private void updateInvoiceTypePanel(PdfDokument pdfDoc) {
       if (pdfDoc == null || pdfDoc.getFullPath() == null || pdfDoc.getFullPath().isBlank()) {
           view.updateInvoiceTypeDisplay(null); return;
