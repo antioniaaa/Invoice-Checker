@@ -1,7 +1,6 @@
 {
-  "name" : "EDis small",
+  "name" : "EDis_small",
   "usePageSpecificAreas" : true,
-  "globalAreas" : [ ],
   "globalAreasList" : [ ],
   "pageSpecificAreasMap" : {
     "1" : [ {

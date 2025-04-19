@@ -279,33 +279,115 @@ public class AppController {
       view.updateConfigurationComboBox(configs, activeConfig);
   }
 
-  /** Aktualisiert das Invoice Type Panel in der GUI basierend auf PDF-Inhalt. */
+  // In AppController.java
+
+  /**
+   * Aktualisiert das Invoice Type Panel in der GUI basierend auf PDF-Inhalt.
+   * Startet die Keyword-Suche in einem Hintergrundthread.
+   * Speichert den erkannten Typ für die Neuverarbeitung.
+   * Wird vom Controller aufgerufen (z.B. nach PDF-Auswahl).
+   */
   public void refreshInvoiceTypePanelForCurrentSelection() {
       if (view == null) { log.error("View ist null in refreshInvoiceTypePanelForCurrentSelection"); return; }
-      this.lastDetectedInvoiceType = null;
-      view.updateInvoiceTypeDisplay(null);
-      view.setRefreshButtonEnabled(false);
+      this.lastDetectedInvoiceType = null; // Reset beim Start der Suche
+      view.updateInvoiceTypeDisplay(null); // Panel erstmal leeren
+      view.setRefreshButtonEnabled(false); // Refresh deaktivieren während Suche
 
-      PdfDokument pdfDoc = model.getAusgewaehltesDokument();
-      if (pdfDoc == null || pdfDoc.getFullPath() == null || pdfDoc.getFullPath().isBlank()) { log.debug("Kein gültiges Dokument für Keyword-Suche ausgewählt."); return; }
+      PdfDokument pdfDoc = model.getAusgewaehltesDokument(); // Hole das aktuell ausgewählte
+      if (pdfDoc == null || pdfDoc.getFullPath() == null || pdfDoc.getFullPath().isBlank()) {
+          log.debug("Kein gültiges Dokument für Keyword-Suche ausgewählt.");
+          // Stelle sicher, dass Refresh Button deaktiviert bleibt, wenn kein Dokument da ist
+          view.setRefreshButtonEnabled(false);
+          return; // Nichts zu tun
+      }
       final Path pdfPath;
-      try { pdfPath = Paths.get(pdfDoc.getFullPath()); if (!Files.exists(pdfPath)) { log.error("PDF für Keyword nicht gefunden: {}", pdfPath); view.updateInvoiceTypeDisplay(null); view.setStatus("Fehler: PDF für Typ nicht gefunden."); return; } }
-      catch (Exception e) { log.error("Ungültiger PDF-Pfad: {}", pdfDoc.getFullPath(), e); view.updateInvoiceTypeDisplay(null); view.setStatus("Fehler: Ungültiger PDF-Pfad."); return; }
+      try {
+           pdfPath = Paths.get(pdfDoc.getFullPath());
+           if (!Files.exists(pdfPath)) {
+                log.error("PDF für Keyword nicht gefunden: {}", pdfPath);
+                view.updateInvoiceTypeDisplay(null);
+                view.setStatus("Fehler: PDF für Typ nicht gefunden.");
+                view.setRefreshButtonEnabled(false); // Deaktivieren bei Fehler
+                return;
+           }
+      }
+      catch (Exception e) {
+           log.error("Ungültiger PDF-Pfad: {}", pdfDoc.getFullPath(), e);
+           view.updateInvoiceTypeDisplay(null);
+           view.setStatus("Fehler: Ungültiger PDF-Pfad.");
+           view.setRefreshButtonEnabled(false); // Deaktivieren bei Fehler
+           return;
+      }
 
-      view.setStatus("Ermittle Rechnungstyp...");
+      view.setStatus("Ermittle Rechnungstyp..."); // Status während Suche
 
       SwingWorker<InvoiceTypeConfig, Void> worker = new SwingWorker<>() {
-          @Override protected InvoiceTypeConfig doInBackground() throws Exception {
-               log.debug("Starte Keyword-Suche für {}", pdfDoc.getSourcePdf());
+          @Override
+          protected InvoiceTypeConfig doInBackground() throws Exception { // Exception deklarieren
+               log.debug("SwingWorker: Starte Keyword-Suche für {}", pdfDoc.getSourcePdf());
                PDDocument pdDoc = null;
-               try { pdDoc = PDDocument.load(pdfPath.toFile()); return model.getInvoiceTypeService().findConfigForPdf(pdDoc); }
-               finally { if (pdDoc != null) try { pdDoc.close(); } catch (IOException e) { log.error("Fehler Schließen Doc nach Keyword", e);} }
+               InvoiceTypeConfig result = null;
+               try {
+                   pdDoc = PDDocument.load(pdfPath.toFile()); // Kann IOException werfen
+                   log.trace("SwingWorker: PDDocument geladen.");
+                   result = model.getInvoiceTypeService().findConfigForPdf(pdDoc); // Kann Fehler werfen? Eher nicht.
+                   log.debug("SwingWorker: Keyword-Suche Ergebnis: {}", result);
+                   return result;
+               } catch (IOException ioEx) {
+                   log.error("SwingWorker: IO Fehler beim Laden von {} für Keyword-Suche: {}", pdfDoc.getSourcePdf(), ioEx.getMessage());
+                   throw ioEx; // Wirf Exception weiter, damit done() sie fängt
+               } catch (Exception ex) {
+                    log.error("SwingWorker: Unerwarteter Fehler in doInBackground für {}: {}", pdfDoc.getSourcePdf(), ex.getMessage(), ex);
+                    throw ex; // Wirf Exception weiter
+               } finally {
+                   if (pdDoc != null) {
+                       try {
+                           pdDoc.close();
+                           log.trace("SwingWorker: PDDocument geschlossen.");
+                       } catch (IOException e) {
+                           log.error("SwingWorker: Fehler beim Schließen von PDDocument", e);
+                       }
+                   }
+               }
           }
-          @Override protected void done() {
-              try { InvoiceTypeConfig found = get(); lastDetectedInvoiceType = found; log.info("Keyword-Suche fertig. Typ: {}", (found != null ? found.getType() : "Default/Fehler")); view.updateInvoiceTypeDisplay(found); view.setRefreshButtonEnabled(true); view.setStatus("Bereit."); }
-              catch (Exception e) { log.error("Fehler Abrufen Keyword-Ergebnis", e); lastDetectedInvoiceType=model.getInvoiceTypeService().getDefaultConfig(); view.updateInvoiceTypeDisplay(lastDetectedInvoiceType); view.setStatus("Fehler Typ-Erkennung."); view.setRefreshButtonEnabled(true); }
+
+          @Override
+          protected void done() {
+              InvoiceTypeConfig foundConfig = null;
+              boolean executionOk = true; // *** NEU: Flag initial auf true setzen ***
+              try {
+                  foundConfig = get(); // Hole Ergebnis aus doInBackground (kann Exceptions werfen)
+                  lastDetectedInvoiceType = foundConfig; // Erkannten Typ merken für Refresh
+                  log.info("SwingWorker.done(): Keyword-Suche fertig. Typ: {}", (foundConfig != null ? foundConfig.getType() : "Default/Fehler"));
+              } catch (InterruptedException e) {
+                   Thread.currentThread().interrupt(); // Interrupt-Status wiederherstellen
+                   log.error("SwingWorker.done(): Keyword-Suche SwingWorker unterbrochen", e);
+                   view.setStatus("Fehler Typ-Erkennung (unterbrochen).");
+                   lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig(); // Fallback
+              } catch (java.util.concurrent.ExecutionException e) {
+                   // Fehler aus doInBackground()
+                   log.error("SwingWorker.done(): Fehler während Keyword-Suche im Hintergrund", e.getCause() != null ? e.getCause() : e); // Logge die *Ursache*
+                   view.setStatus("Fehler bei Rechnungstyp-Erkennung.");
+                   lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig(); // Fallback
+              } catch (Exception e) {
+                   // Fange andere unerwartete Fehler beim Abrufen
+                   log.error("SwingWorker.done(): Unerwarteter Fehler beim Abrufen des Keyword-Suchergebnisses", e);
+                   view.setStatus("Fehler bei Rechnungstyp-Erkennung.");
+                   lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig(); // Fallback
+              } finally {
+            	// ---- GUI Update erfolgt IMMER im finally des done() ----
+                  log.info("EDT> Rufe view.updateInvoiceTypeDisplay auf mit: {}", lastDetectedInvoiceType);
+                  view.updateInvoiceTypeDisplay(lastDetectedInvoiceType); // GUI im EDT aktualisieren
+                  // Aktiviere Refresh-Button wieder, wenn ein Dokument ausgewählt ist
+                  view.setRefreshButtonEnabled(model.getAusgewaehltesDokument() != null);
+                  // Setze Status nur auf "Bereit", wenn die Ausführung OK war
+                  if (executionOk) { // Verwendet das Flag statt view.getStatus()
+                       view.setStatus("Bereit.");
+                  }
+                  // Fortschrittsbalken wird nicht mehr direkt hier gesteuert
+              }
           }
       };
-      worker.execute();
-  }
+      worker.execute(); // Starte den SwingWorker
+   }
 }

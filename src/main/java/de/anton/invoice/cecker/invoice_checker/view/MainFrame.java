@@ -174,4 +174,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
            for (ActionListener l : listeners) tabelleComboBox.addActionListener(l);
       }
  }
+ 
+ 
+ 
 }
