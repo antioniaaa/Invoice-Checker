@@ -31,6 +31,14 @@ public class InvoiceTypeConfig {
         this.defaultRowTol = defaultRowTol != null ? defaultRowTol.trim() : "2"; // Default setzen
     }
 
+ // --- NEUE Setter ---
+    public void setKeyword(String keyword) { this.keyword = keyword != null ? keyword.trim() : ""; }
+    public void setKeywordAlternate(String keywordAlternate) { this.keywordAlternate = keywordAlternate != null ? keywordAlternate.trim() : ""; }
+    public void setType(String type) { this.type = type != null ? type.trim() : ""; }
+    public void setAreaType(String areaType) { this.areaType = areaType != null ? areaType.trim() : ""; }
+    public void setDefaultFlavor(String defaultFlavor) { this.defaultFlavor = (defaultFlavor != null && !defaultFlavor.isBlank()) ? defaultFlavor.trim() : "lattice"; }
+    public void setDefaultRowTol(String defaultRowTol) { this.defaultRowTol = (defaultRowTol != null && !defaultRowTol.isBlank()) ? defaultRowTol.trim() : "2"; }
+    
     // toString für Debugging
     @Override
     public String toString() {
