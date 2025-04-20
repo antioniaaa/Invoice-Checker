@@ -250,32 +250,52 @@ public class AppController {
  /** Behandelt den Klick auf den "Akt. Parameter für Typ speichern"-Button. */
  private void handleUpdateCsvAction(ActionEvent e) {
      log.info("Update CSV Button geklickt.");
-     log.debug("--> Aktueller Wert von lastDetectedInvoiceType: {}", this.lastDetectedInvoiceType); // Log hinzufügen!
-     if (view == null) { log.error("View ist null..."); return; }
+     if (view == null) { log.error("View ist null in handleUpdateCsvAction"); return; }
 
-     InvoiceTypeConfig configToUpdate = this.lastDetectedInvoiceType;
-     if (configToUpdate == null || InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(configToUpdate.getKeyword())) {
-         log.warn("Kein spezifischer Typ zum Aktualisieren oder 'Others'.");
-         JOptionPane.showMessageDialog(view, "Es muss ein spezifischer Rechnungstyp (nicht 'Others') erkannt sein,\num dessen Werte in der CSV zu aktualisieren.", "Aktion nicht möglich", JOptionPane.WARNING_MESSAGE);
+     // --- KORREKTUR: Keyword direkt aus dem GUI-Feld lesen ---
+     // Hole den aktuell im Panel angezeigten Keyword-String.
+     String keyword = view.getTxtDetectedKeyword().getText(); // Annahme: Getter existiert in MainFrame
+
+     // Prüfe, ob ein spezifischer Typ angezeigt wird (nicht "-" oder "Others")
+     if (keyword == null || keyword.isBlank() || "-".equals(keyword) || InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(keyword)) {
+         log.warn("Kein spezifischer Rechnungstyp im Panel angezeigt ('{}'). Update nicht möglich.", keyword);
+         JOptionPane.showMessageDialog(view, "Es muss ein spezifischer Rechnungstyp (nicht 'Others') erkannt und angezeigt sein,\num dessen Standardwerte in der CSV zu aktualisieren.", "Aktion nicht möglich", JOptionPane.WARNING_MESSAGE);
          return;
      }
-     String keyword = configToUpdate.getKeyword();
+     // --- Ende Korrektur ---
 
+     // Hole die NEUEN Werte aus den oberen GUI-Elementen (unverändert)
      Map<String, String> params = getCurrentParametersFromGui();
-     String newFlavor = params.get("flavor"); String newRowTol = params.get("row_tol");
-     Object selectedConfigItem = view.getConfigComboBox().getSelectedItem();
-     String newAreaType = "Keine";
-     if (selectedConfigItem instanceof ExtractionConfiguration) newAreaType = ((ExtractionConfiguration) selectedConfigItem).getName();
-     else if (selectedConfigItem != null && !"Keine".equals(selectedConfigItem.toString())) newAreaType = configToUpdate.getAreaType(); // Behalte alten Wert
+     String newFlavor = params.get("flavor");
+     String newRowTol = params.get("row_tol");
 
-     log.debug("Werte für CSV-Update: K='{}', Area='{}', Fl='{}', Tol='{}'", keyword, newAreaType, newFlavor, newRowTol);
+     Object selectedConfigItem = view.getConfigComboBox().getSelectedItem();
+     String newAreaType = "Keine"; // Default
+     if (selectedConfigItem instanceof ExtractionConfiguration) {
+         newAreaType = ((ExtractionConfiguration) selectedConfigItem).getName();
+     } else if (selectedConfigItem != null && !"Keine".equals(selectedConfigItem.toString())) {
+          log.warn("Unerwarteter Typ in Bereichs-Konfig ComboBox: {}", selectedConfigItem);
+          // Hole alten Wert als Fallback? Sicherer ist Default "Keine".
+          // InvoiceTypeConfig oldConf = model.getInvoiceTypeService().findConfigByKeyword(keyword); // Braucht neue Service-Methode
+          // if (oldConf != null) newAreaType = oldConf.getAreaType();
+          newAreaType = "Keine"; // Fallback
+     }
+     log.debug("Werte für CSV-Update: Keyword='{}', AreaType='{}', Flavor='{}', RowTol='{}'",
+               keyword, newAreaType, newFlavor, newRowTol);
+
+     // Rufe Service auf, um CSV zu aktualisieren (unverändert)
      boolean success = model.getInvoiceTypeService().updateConfigInCsv(keyword, newAreaType, newFlavor, newRowTol);
 
+     // Gib Feedback und aktualisiere Anzeige (unverändert)
      if (success) {
-         log.info("CSV aktualisiert für '{}'.", keyword);
-         JOptionPane.showMessageDialog(view, "Standardwerte für Typ '" + keyword + "' in CSV aktualisiert.", "Update erfolgreich", JOptionPane.INFORMATION_MESSAGE);
-         refreshInvoiceTypePanelForCurrentSelection(); // Anzeige aktualisieren
-     } else { log.error("Fehler Update CSV für '{}'.", keyword); JOptionPane.showMessageDialog(view, "Fehler beim Aktualisieren der CSV-Datei.", "Update fehlgeschlagen", JOptionPane.ERROR_MESSAGE); }
+         log.info("CSV-Datei erfolgreich aktualisiert für Keyword '{}'.", keyword);
+         JOptionPane.showMessageDialog(view, "Standardwerte für Rechnungstyp '" + keyword + "'\nin der CSV-Datei aktualisiert.", "Update erfolgreich", JOptionPane.INFORMATION_MESSAGE);
+         // Lade die Daten für das Panel neu, um die gespeicherten Werte anzuzeigen
+         refreshInvoiceTypePanelForCurrentSelection();
+     } else {
+         log.error("Fehler beim Aktualisieren der CSV-Datei für Keyword '{}'.", keyword);
+         JOptionPane.showMessageDialog(view, "Fehler beim Aktualisieren der CSV-Datei.\nPrüfen Sie die Logs oder Dateiberechtigungen.", "Update fehlgeschlagen", JOptionPane.ERROR_MESSAGE);
+     }
  }
 
  // --- Hilfsmethoden ---
