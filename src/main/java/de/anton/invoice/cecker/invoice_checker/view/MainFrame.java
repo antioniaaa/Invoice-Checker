@@ -382,22 +382,37 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  public void setProgressBarValue(int value) { SwingUtilities.invokeLater(() -> { progressBar.setValue(value); progressBar.setString(value + "%"); }); }
 
  /** Aktualisiert die Felder im "Table Definition Panel". */
+//In MainFrame.java
+
+ /** Aktualisiert die Felder im "Table Definition Panel" und (de)aktiviert den Update-Button. */
  public void updateInvoiceTypeDisplay(InvoiceTypeConfig config) {
-	 SwingUtilities.invokeLater(() -> {
-         // boolean enableUpdate = false; // Nicht mehr hier benötigt
+     SwingUtilities.invokeLater(() -> {
+         boolean enableUpdate = false; // Standard: Button deaktiviert
          if (config != null) {
+             // Felder befüllen
              txtDetectedKeyword.setText(config.getKeyword());
              txtDetectedType.setText(config.getType());
              txtDetectedAreaType.setText(config.getAreaType());
              txtDetectedFlavor.setText(config.getDefaultFlavor());
              txtDetectedRowTol.setText(config.getDefaultRowTol());
-             // if (!InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(config.getKeyword())) {
-             //     enableUpdate = true;
-             // } // Nicht mehr hier
+
+             // Prüfe, ob der Button aktiviert werden soll
+             if (!InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(config.getKeyword())) {
+                 enableUpdate = true; // Ja, wenn es nicht der Default "Others" ist
+             }
+             log.debug("--> Update CSV Button enabled wird auf {} gesetzt (Keyword: {}).", enableUpdate, config.getKeyword());
          } else {
-             txtDetectedKeyword.setText("-"); txtDetectedType.setText("-"); txtDetectedAreaType.setText("-"); txtDetectedFlavor.setText("-"); txtDetectedRowTol.setText("-");
+             // Kein config-Objekt -> Felder leeren
+             txtDetectedKeyword.setText("-");
+             txtDetectedType.setText("-");
+             txtDetectedAreaType.setText("-");
+             txtDetectedFlavor.setText("-");
+             txtDetectedRowTol.setText("-");
+             log.debug("--> Update CSV Button enabled wird auf false gesetzt (config ist null).");
+             enableUpdate = false; // Sicherstellen, dass Button aus ist
          }
-         // btnUpdateCsv.setEnabled(enableUpdate); // Nicht mehr hier setzen!
+         // *** KORREKTUR: Rufe setEnabled mit dem finalen Wert von enableUpdate auf ***
+         setUpdateCsvButtonEnabled(enableUpdate);
      });
  }
 
