@@ -383,15 +383,21 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
 
  /** Aktualisiert die Felder im "Table Definition Panel". */
  public void updateInvoiceTypeDisplay(InvoiceTypeConfig config) {
-     SwingUtilities.invokeLater(() -> {
-         boolean enableUpdate = false;
+	 SwingUtilities.invokeLater(() -> {
+         // boolean enableUpdate = false; // Nicht mehr hier benötigt
          if (config != null) {
-             txtDetectedKeyword.setText(config.getKeyword()); txtDetectedType.setText(config.getType()); txtDetectedAreaType.setText(config.getAreaType()); txtDetectedFlavor.setText(config.getDefaultFlavor()); txtDetectedRowTol.setText(config.getDefaultRowTol());
-             if (!InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(config.getKeyword())) enableUpdate = true;
+             txtDetectedKeyword.setText(config.getKeyword());
+             txtDetectedType.setText(config.getType());
+             txtDetectedAreaType.setText(config.getAreaType());
+             txtDetectedFlavor.setText(config.getDefaultFlavor());
+             txtDetectedRowTol.setText(config.getDefaultRowTol());
+             // if (!InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(config.getKeyword())) {
+             //     enableUpdate = true;
+             // } // Nicht mehr hier
          } else {
              txtDetectedKeyword.setText("-"); txtDetectedType.setText("-"); txtDetectedAreaType.setText("-"); txtDetectedFlavor.setText("-"); txtDetectedRowTol.setText("-");
          }
-         setUpdateCsvButtonEnabled(enableUpdate); // Aktualisiere Button Status
+         // btnUpdateCsv.setEnabled(enableUpdate); // Nicht mehr hier setzen!
      });
  }
 
@@ -399,7 +405,18 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  public void setRefreshButtonEnabled(boolean enabled) { SwingUtilities.invokeLater(() -> btnRefresh.setEnabled(enabled)); }
 
  /** Setzt den Enabled-Status des Update-CSV-Buttons. */
- public void setUpdateCsvButtonEnabled(boolean enabled) { SwingUtilities.invokeLater(() -> btnUpdateCsv.setEnabled(enabled)); }
+ public void setUpdateCsvButtonEnabled(boolean enabled) {
+     // Füge Log hinzu, um zu sehen, ob die Methode erreicht wird
+     log.debug("MainFrame.setUpdateCsvButtonEnabled({}) aufgerufen.", enabled);
+     SwingUtilities.invokeLater(() -> {
+         if (btnUpdateCsv != null) { // Sicherstellen, dass Button initialisiert ist
+             btnUpdateCsv.setEnabled(enabled);
+             log.trace("--> btnUpdateCsv.setEnabled({}) ausgeführt.", enabled);
+         } else {
+             log.error("!!! btnUpdateCsv ist null in setUpdateCsvButtonEnabled !!!");
+         }
+     });
+ }
 
 
  // --- PropertyChangeListener Implementierung ---

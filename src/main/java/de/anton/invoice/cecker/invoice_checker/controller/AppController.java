@@ -371,13 +371,30 @@ public class AppController {
     		  }
     		  return result; // Gib Ergebnis oder null zurück
     	  }
-    	  @Override protected void done() {
-    		  InvoiceTypeConfig foundConfig = null; boolean executionOk = true;
-              try { foundConfig = get(); lastDetectedInvoiceType = foundConfig; log.info("EDT> Keyword-Suche fertig. Typ: {}", (foundConfig != null ? foundConfig.getType() : "Default/Fehler")); }
-              catch (InterruptedException e) { Thread.currentThread().interrupt(); log.error("EDT> Keyword-Suche unterbrochen", e); view.logMessage("Fehler Typ-Erkennung (unterbrochen)."); lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig(); executionOk=false;}
-              catch (java.util.concurrent.ExecutionException e) { log.error("EDT> Fehler während Keyword-Suche", e.getCause()!=null?e.getCause():e); view.logMessage("Fehler bei Rechnungstyp-Erkennung."); lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig(); executionOk=false;}
-              catch (Exception e) { log.error("EDT> Unerwarteter Fehler get()", e); view.logMessage("Fehler bei Rechnungstyp-Erkennung."); lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig(); executionOk=false;}
-              finally { log.info("EDT> Rufe view.updateInvoiceTypeDisplay auf mit: {}", lastDetectedInvoiceType); view.updateInvoiceTypeDisplay(lastDetectedInvoiceType); view.setRefreshButtonEnabled(true); if(executionOk) view.logMessage("Bereit.");}
+    	// In AppController.java -> refreshInvoiceTypePanelForCurrentSelection -> SwingWorker -> done()
+          @Override protected void done() {
+              InvoiceTypeConfig foundConfig = null;
+              boolean executionOk = true;
+              try {
+                  foundConfig = get();
+                  // *** WICHTIG: Erst hier den Typ setzen ***
+                  lastDetectedInvoiceType = foundConfig;
+                  log.info("EDT> Keyword-Suche fertig. Typ: {}", (foundConfig != null ? foundConfig.getType() : "Default/Fehler"));
+              } catch (InterruptedException e) { /*...*/ executionOk=false; lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig();}
+                catch (java.util.concurrent.ExecutionException e) { /*...*/ executionOk=false; lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig();}
+                catch (Exception e) { /*...*/ executionOk=false; lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig();}
+              finally {
+                  log.info("EDT> Rufe view.updateInvoiceTypeDisplay auf mit: {}", lastDetectedInvoiceType);
+                  view.updateInvoiceTypeDisplay(lastDetectedInvoiceType); // GUI aktualisieren
+
+                  // *** NEU: Update-Button Status hier setzen ***
+                  boolean enableUpdate = (lastDetectedInvoiceType != null && !InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(lastDetectedInvoiceType.getKeyword()));
+                  view.setUpdateCsvButtonEnabled(enableUpdate);
+                  // --- Ende NEU ---
+
+                  view.setRefreshButtonEnabled(model.getAusgewaehltesDokument() != null);
+                  if(executionOk) view.logMessage("Bereit."); // Status nur bei Erfolg zurücksetzen
+              }
           }
       };
       worker.execute();
