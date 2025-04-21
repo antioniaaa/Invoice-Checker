@@ -35,10 +35,21 @@ public class ConfigurationService {
         try {
             Path baseDir = Paths.get("").toAbsolutePath();
             resolvedConfigDir = baseDir.resolve("configs").resolve(AREA_CONFIG_SUBDIR);
-            if (!Files.exists(resolvedConfigDir)) { Files.createDirectories(resolvedConfigDir); log.info("Bereichs-Konfigurationsverzeichnis erstellt: {}", resolvedConfigDir.toAbsolutePath()); }
-            else if (!Files.isDirectory(resolvedConfigDir)) { log.error("'{}' existiert, ist aber kein Verzeichnis!", resolvedConfigDir.toAbsolutePath()); resolvedConfigDir = null; }
-            else { log.info("Verwende Bereichs-Konfigurationsverzeichnis: {}", resolvedConfigDir.toAbsolutePath()); }
-        } catch (Exception e) { log.error("Fehler Initialisieren Bereichs-Konfig-Verzeichnis.", e); resolvedConfigDir = null; }
+            
+            
+            if (!Files.exists(resolvedConfigDir)) { 
+            	Files.createDirectories(resolvedConfigDir); 
+            	log.info("Bereichs-Konfigurationsverzeichnis erstellt: {}", resolvedConfigDir.toAbsolutePath()); 
+            	} else if (!Files.isDirectory(resolvedConfigDir)) { 
+            		log.error("'{}' existiert, ist aber kein Verzeichnis!", resolvedConfigDir.toAbsolutePath()); 
+            		resolvedConfigDir = null; 
+            		} else { 
+            			log.info("Verwende Bereichs-Konfigurationsverzeichnis: {}", resolvedConfigDir.toAbsolutePath()); 
+            			}
+        } catch (Exception e) { 
+        	log.error("Fehler Initialisieren Bereichs-Konfig-Verzeichnis.", e); 
+        	resolvedConfigDir = null; 
+        	}
         this.configDir = resolvedConfigDir;
         this.objectMapper = new ObjectMapper(); this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
     }

@@ -39,13 +39,16 @@ import java.util.Vector;
 import java.time.LocalDateTime; // Für Zeitstempel im Log-Bereich
 import java.time.format.DateTimeFormatter; // Für Zeitstempel im Log-Bereich
 
+import javax.swing.border.EmptyBorder;
+import javax.swing.event.ListSelectionListener; // NEU für CRUD Liste
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
 * Das Hauptfenster (View) der Anwendung mit Tab-basierter Oberfläche.
 * Tab 1: Laden von Abrechnungs-PDFs und Anzeige von Log-Meldungen.
-* Tab 2: Laden von PDFs zur Detailansicht, Konfiguration, Parameteranpassung und Tabellenanzeige.
-* Lauscht auf Änderungen im Modell. Enthält Fortschrittsanzeige
-* und Panel für erkannte Rechnungstypen.
+* Tab 2: Laden von PDFs zur Detailansicht, Konfiguration, Parameteranpassung,
+*        Verwaltung von Rechnungstypen (CRUD) und Tabellenanzeige.
+* Lauscht auf Änderungen im Modell. Enthält Fortschrittsanzeige.
 */
 public class MainFrame extends JFrame implements PropertyChangeListener {
  private static final Logger log = LoggerFactory.getLogger(MainFrame.class);
@@ -66,8 +69,6 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  private JButton ladePdfButtonDetails;  // Button für Tab 2
  private JButton exportExcelButton;
  private JButton btnRefresh;
- private JButton btnEditCsv;
- private JButton btnUpdateCsv;
  private JComboBox<PdfDokument> pdfComboBox;
  private JComboBox<ExtrahierteTabelle> tabelleComboBox;
  private JComboBox<Object> configComboBox; // Bereichs-Konfigs
@@ -76,12 +77,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  private JLabel rowToleranceLabel;
  private JTable datenTabelle;
  private DefaultTableModel tabellenModell;
- private JPanel tableDefinitionPanel;
- private JTextField txtDetectedKeyword;
- private JTextField txtDetectedType;
- private JTextField txtDetectedAreaType;
- private JTextField txtDetectedFlavor;
- private JTextField txtDetectedRowTol;
+ private InvoiceTypeCrudPanel invoiceTypeCrudPanel; // NEU: Das CRUD Panel ersetzt das alte Info-Panel
  private JProgressBar progressBar; // Gemeinsamer Fortschrittsbalken unten
 
  // Menü
@@ -91,15 +87,13 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
 
  // Für Log Zeitstempel
  private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss");
- // Eigene Konstante für den Default-Namen (statt Service-Import)
- private static final String DEFAULT_TYPE_KEYWORD_DISPLAY = "Others";
 
 
  /**
   * Konstruktor für das Hauptfenster.
   * @param model Das Anwendungsmodell. Darf nicht null sein.
   */
- public MainFrame(AnwendungsModell model) { // Nimmt KEINEN Controller mehr entgegen
+ public MainFrame(AnwendungsModell model) { // Nimmt KEINEN Controller entgegen
      if (model == null) {
           throw new IllegalArgumentException("Modell darf im MainFrame nicht null sein!");
      }
@@ -142,56 +136,41 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      ladePdfButtonAbrechnung = new JButton("Abrechnungs-PDFs auswählen...");
      ladePdfButtonAbrechnung.setToolTipText("Wählt PDFs für eine zukünftige Abrechnungsfunktion aus.");
      logTextArea = new JTextArea(15, 80);
-     logTextArea.setEditable(false);
-     logTextArea.setLineWrap(true);
-     logTextArea.setWrapStyleWord(true);
-     logTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+     logTextArea.setEditable(false); logTextArea.setLineWrap(true); logTextArea.setWrapStyleWord(true); logTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 
      // --- Komponenten für Tab 2: Konfiguration & Details ---
-     ladePdfButtonDetails = new JButton("PDF(s) laden (Details)");
-     ladePdfButtonDetails.setToolTipText("Lädt PDFs zur Detailansicht, Konfiguration und Parameteranpassung.");
-     exportExcelButton = new JButton("Tabelle exportieren"); exportExcelButton.setEnabled(false); exportExcelButton.setToolTipText("Exportiert die aktuell angezeigte Tabelle nach Excel.");
-     btnRefresh = new JButton("Neu verarbeiten"); btnRefresh.setToolTipText("Verarbeitet das aktuell ausgewählte PDF erneut mit den eingestellten Parametern/Konfigs."); btnRefresh.setEnabled(false);
-     btnEditCsv = new JButton("Typdefinitionen (CSV)..."); btnEditCsv.setToolTipText("Öffnet die invoice-config.csv im Standardeditor.");
-     btnUpdateCsv = new JButton("Params für Typ speichern"); btnUpdateCsv.setToolTipText("Speichert manuelle Parameter für erkannten Typ in CSV."); btnUpdateCsv.setEnabled(false);
+     ladePdfButtonDetails = new JButton("PDF(s) laden (Details)"); ladePdfButtonDetails.setToolTipText("Lädt PDFs zur Detailansicht...");
+     exportExcelButton = new JButton("Tabelle exportieren"); exportExcelButton.setEnabled(false); exportExcelButton.setToolTipText("Exportiert aktuell angezeigte Tabelle...");
+     btnRefresh = new JButton("Neu verarbeiten"); btnRefresh.setToolTipText("Verarbeitet PDF neu..."); btnRefresh.setEnabled(false);
      pdfComboBox = new JComboBox<>(); pdfComboBox.setToolTipText("Verarbeitetes PDF auswählen");
      tabelleComboBox = new JComboBox<>(); tabelleComboBox.setEnabled(false); tabelleComboBox.setToolTipText("Extrahierte Tabelle auswählen");
-     configComboBox = new JComboBox<>(); configComboBox.setPreferredSize(new Dimension(160, configComboBox.getPreferredSize().height)); configComboBox.setToolTipText("Aktive Bereichs-Konfiguration auswählen ('Keine' = ohne Bereiche)");
+     configComboBox = new JComboBox<>(); configComboBox.setPreferredSize(new Dimension(160, configComboBox.getPreferredSize().height)); configComboBox.setToolTipText("Aktive Bereichs-Konfiguration");
      flavorComboBox = new JComboBox<>(new String[]{"lattice", "stream"}); flavorComboBox.setSelectedItem("lattice"); flavorComboBox.setToolTipText("Manuelle Extraktionsmethode");
      SpinnerNumberModel spinnerModel = new SpinnerNumberModel(2, 0, 100, 1);
-     rowToleranceSpinner = new JSpinner(spinnerModel); rowToleranceSpinner.setToolTipText("Manuelle Zeilentoleranz für 'stream' (höher=toleranter).");
+     rowToleranceSpinner = new JSpinner(spinnerModel); rowToleranceSpinner.setToolTipText("Manuelle Zeilentoleranz (nur für stream)");
      rowToleranceLabel = new JLabel("Row Tol (Stream):");
      tabellenModell = new DefaultTableModel(); datenTabelle = new JTable(tabellenModell); datenTabelle.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-     tableDefinitionPanel = new JPanel(new GridBagLayout()); tableDefinitionPanel.setBorder(BorderFactory.createTitledBorder("Erkannter Rechnungstyp & Parameter"));
-     txtDetectedKeyword = createReadOnlyTextField(15); txtDetectedType = createReadOnlyTextField(15); txtDetectedAreaType = createReadOnlyTextField(10); txtDetectedFlavor = createReadOnlyTextField(8); txtDetectedRowTol = createReadOnlyTextField(4);
 
-     // --- Gemeinsame Komponenten ---
+     // NEU: CRUD Panel initialisieren
+     invoiceTypeCrudPanel = new InvoiceTypeCrudPanel();
+
+     // Menü
      menuBar = new JMenuBar(); configMenu = new JMenu("Konfiguration"); menuBar.add(configMenu); openConfigEditorMenuItem = new JMenuItem("Bereichsdefinition Editor..."); openConfigEditorMenuItem.setToolTipText("Definiert Bereiche für die Extraktion"); configMenu.add(openConfigEditorMenuItem);
-     progressBar = new JProgressBar(0, 100); progressBar.setStringPainted(true); progressBar.setVisible(false); progressBar.setPreferredSize(new Dimension(150, progressBar.getPreferredSize().height));
- }
 
- /** Hilfsmethode für read-only Textfelder mit Tooltip. */
- private JTextField createReadOnlyTextField(int columns) {
-     JTextField tf = new JTextField(columns); tf.setEditable(false); tf.setBackground(UIManager.getColor("TextField.inactiveBackground")); tf.setToolTipText("Automatisch aus invoice-config.csv ermittelt."); return tf;
+     // Fortschrittsbalken
+     progressBar = new JProgressBar(0, 100); progressBar.setStringPainted(true); progressBar.setVisible(false); progressBar.setPreferredSize(new Dimension(150, progressBar.getPreferredSize().height));
  }
 
  /** Ordnet die Komponenten im Fenster mit Tabs an. */
  private void layoutKomponenten() {
      // === Tab 1: Abrechnungen ===
-     abrechnungenPanel = new JPanel(new BorderLayout(10, 10));
-     abrechnungenPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-     JPanel loadButtonPanelAbrechnung = new JPanel(new FlowLayout(FlowLayout.CENTER));
-     loadButtonPanelAbrechnung.add(ladePdfButtonAbrechnung);
-     abrechnungenPanel.add(loadButtonPanelAbrechnung, BorderLayout.NORTH);
-     JScrollPane logScrollPane = new JScrollPane(logTextArea);
-     logScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-     abrechnungenPanel.add(logScrollPane, BorderLayout.CENTER);
+     abrechnungenPanel = new JPanel(new BorderLayout(10, 10)); abrechnungenPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+     JPanel loadBtnPanel1 = new JPanel(new FlowLayout(FlowLayout.CENTER)); loadBtnPanel1.add(ladePdfButtonAbrechnung); abrechnungenPanel.add(loadBtnPanel1, BorderLayout.NORTH);
+     JScrollPane logScrollPane = new JScrollPane(logTextArea); logScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS); abrechnungenPanel.add(logScrollPane, BorderLayout.CENTER);
 
      // === Tab 2: Konfiguration & Details ===
-     configDetailPanel = new JPanel(new BorderLayout(5, 5));
-     configDetailPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-
-     // Oberes Panel für Steuerung
+     configDetailPanel = new JPanel(new BorderLayout(5, 5)); configDetailPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+     // Oberes Panel für Auswahl, Parameter, Laden (Details)
      JPanel topControlPanel = new JPanel(); topControlPanel.setLayout(new BoxLayout(topControlPanel, BoxLayout.X_AXIS)); topControlPanel.setBorder(BorderFactory.createEmptyBorder(0,0,5,0));
      JPanel selectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
      selectionPanel.add(ladePdfButtonDetails); selectionPanel.add(Box.createHorizontalStrut(15));
@@ -207,23 +186,26 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      JScrollPane tableScrollPane = new JScrollPane(datenTabelle);
      configDetailPanel.add(tableScrollPane, BorderLayout.CENTER);
 
-     // Unteres Panel für InvoiceType-Info und Buttons
-     JPanel bottomPanelCombined = new JPanel(new BorderLayout(5, 5));
-     // InvoiceType Panel Layout
-     GridBagConstraints gbcT=new GridBagConstraints(); gbcT.insets=new Insets(3,5,3,5); gbcT.anchor=GridBagConstraints.WEST;
-     gbcT.gridx=0; gbcT.gridy=0; tableDefinitionPanel.add(new JLabel("Erk. Keyword:"), gbcT); gbcT.gridx=1; tableDefinitionPanel.add(txtDetectedKeyword, gbcT); gbcT.gridx=2; tableDefinitionPanel.add(new JLabel("Typ:"), gbcT); gbcT.gridx=3; tableDefinitionPanel.add(txtDetectedType, gbcT);
-     gbcT.gridx=0; gbcT.gridy=1; tableDefinitionPanel.add(new JLabel("Bereichs-Konfig:"), gbcT); gbcT.gridx=1; tableDefinitionPanel.add(txtDetectedAreaType, gbcT); gbcT.gridx=2; tableDefinitionPanel.add(new JLabel("Def. Flavor:"), gbcT); gbcT.gridx=3; tableDefinitionPanel.add(txtDetectedFlavor, gbcT); gbcT.gridx=4; tableDefinitionPanel.add(new JLabel("Def. RowTol:"), gbcT); gbcT.gridx=5; gbcT.weightx=0.0; tableDefinitionPanel.add(txtDetectedRowTol, gbcT);
-     JPanel invoiceButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0)); invoiceButtonPanel.add(btnUpdateCsv); invoiceButtonPanel.add(btnEditCsv);
-     gbcT.gridx=6; gbcT.gridy=0; gbcT.gridheight=2; gbcT.weightx=1.0; gbcT.anchor=GridBagConstraints.EAST; gbcT.fill=GridBagConstraints.NONE; tableDefinitionPanel.add(invoiceButtonPanel, gbcT);
-     bottomPanelCombined.add(tableDefinitionPanel, BorderLayout.CENTER);
-     // Export/Refresh Buttons Panel
-     JPanel actionButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT)); actionButtonPanel.add(btnRefresh); actionButtonPanel.add(exportExcelButton);
-     bottomPanelCombined.add(actionButtonPanel, BorderLayout.EAST);
-     configDetailPanel.add(bottomPanelCombined, BorderLayout.SOUTH);
+     // Unteres Panel mit CRUD und Aktionsbuttons
+     JPanel bottomArea = new JPanel(new BorderLayout(10, 5)); // Mehr Abstand zwischen CRUD und Buttons
+     bottomArea.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0)); // Abstand nach oben
+     // Füge das CRUD Panel hinzu (nimmt den linken/mittleren Bereich ein)
+     bottomArea.add(invoiceTypeCrudPanel, BorderLayout.CENTER);
+     // Panel für die Buttons rechts unten
+     JPanel actionButtonPanel = new JPanel();
+     actionButtonPanel.setLayout(new BoxLayout(actionButtonPanel, BoxLayout.Y_AXIS)); // Buttons untereinander
+     actionButtonPanel.add(btnRefresh);
+     actionButtonPanel.add(Box.createVerticalStrut(5)); // Abstand zwischen Buttons
+     actionButtonPanel.add(exportExcelButton);
+     // Füge leeren Rand hinzu für Ästhetik
+     actionButtonPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+     bottomArea.add(actionButtonPanel, BorderLayout.EAST); // Buttons rechts
+
+     configDetailPanel.add(bottomArea, BorderLayout.SOUTH); // Füge kombiniertes unteres Panel hinzu
 
      // === Tabs hinzufügen ===
-     tabbedPane.addTab("Abrechnungen verarbeiten", null, abrechnungenPanel, "PDF-Dateien für Abrechnungsfunktion auswählen");
-     tabbedPane.addTab("Konfiguration & Detailansicht", null, configDetailPanel, "Parameter einstellen und extrahierte Tabellen im Detail anzeigen");
+     tabbedPane.addTab("Abrechnungen verarbeiten", null, abrechnungenPanel, "Platzhalter für zukünftige Abrechnungsfunktion");
+     tabbedPane.addTab("Konfiguration & Detailansicht", null, configDetailPanel, "Parameter einstellen und extrahierte Tabellen ansehen");
 
      // === Gesamtlayout ===
      setLayout(new BorderLayout());
@@ -237,12 +219,18 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  }
 
  // --- Methoden für den Controller (Listener registrieren) ---
+ // Die add... Methoden ermöglichen dem Controller, seine Handler zu registrieren
  public void addLadeButtonAbrechnungListener(ActionListener listener) { ladePdfButtonAbrechnung.addActionListener(listener); }
  public void addLadeButtonDetailsListener(ActionListener listener) { ladePdfButtonDetails.addActionListener(listener); }
  public void addExportButtonListener(ActionListener listener) { exportExcelButton.addActionListener(listener); }
  public void addRefreshButtonListener(ActionListener listener) { btnRefresh.addActionListener(listener); }
- public void addEditCsvButtonListener(ActionListener listener) { btnEditCsv.addActionListener(listener); }
- public void addUpdateCsvButtonListener(ActionListener listener) { btnUpdateCsv.addActionListener(listener); }
+ // CRUD Panel Listener
+ public void addCrudListSelectionListener(ListSelectionListener listener) { invoiceTypeCrudPanel.addListSelectionListener(listener); }
+ public void addCrudNewButtonListener(ActionListener listener) { invoiceTypeCrudPanel.addNewButtonListener(listener); }
+ public void addCrudSaveButtonListener(ActionListener listener) { invoiceTypeCrudPanel.addSaveButtonListener(listener); }
+ public void addCrudDeleteButtonListener(ActionListener listener) { invoiceTypeCrudPanel.addDeleteButtonListener(listener); }
+ public void addCrudEditCsvButtonListener(ActionListener listener) { invoiceTypeCrudPanel.addEditCsvButtonListener(listener); }
+ // Andere Listener
  public void addPdfComboBoxListener(ActionListener listener) { pdfComboBox.addActionListener(listener); }
  public void addTabelleComboBoxListener(ActionListener listener) { tabelleComboBox.addActionListener(listener); }
  public void addFlavorComboBoxListener(ActionListener listener) { flavorComboBox.addActionListener(listener); }
@@ -252,26 +240,27 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
 
 
  // --- Getter für Komponenten ---
+ // Werden vom Controller benötigt, um Werte zu lesen oder Zustand zu prüfen/setzen
  public JComboBox<String> getFlavorComboBox() { return flavorComboBox; }
  public JSpinner getRowToleranceSpinner() { return rowToleranceSpinner; }
  public JComboBox<PdfDokument> getPdfComboBox() { return pdfComboBox; }
  public JComboBox<ExtrahierteTabelle> getTabelleComboBox() { return tabelleComboBox; }
  public JComboBox<Object> getConfigComboBox() { return configComboBox; }
- public JTextField getTxtDetectedKeyword() { return txtDetectedKeyword; } // Getter für Controller
+ public InvoiceTypeCrudPanel getInvoiceTypeCrudPanel() { return invoiceTypeCrudPanel; } // Wichtig für Controller
 
 
  // --- Methoden zur Aktualisierung der UI-Komponenten ---
 
- /** Aktualisiert die Konfigurations-ComboBox. */
+ /** Aktualisiert die Bereichs-Konfigurations-ComboBox. */
  public void updateConfigurationComboBox(List<ExtractionConfiguration> availableConfigs, ExtractionConfiguration activeConfig) {
-     log.debug("MainFrame.updateConfigurationComboBox aufgerufen mit {} Konfigs. Aktiv: {}", (availableConfigs != null ? availableConfigs.size() : 0), (activeConfig != null ? activeConfig.getName() : "Keine"));
+     log.debug("MainFrame.updateConfigurationComboBox aufgerufen...");
      ItemListener[] listeners = configComboBox.getItemListeners(); for(ItemListener l : listeners) configComboBox.removeItemListener(l);
      configComboBox.removeAllItems(); configComboBox.addItem("Keine");
      if (availableConfigs != null) { availableConfigs.sort(Comparator.comparing(ExtractionConfiguration::getName, String.CASE_INSENSITIVE_ORDER)); for (ExtractionConfiguration config : availableConfigs) { configComboBox.addItem(config); } }
      if (activeConfig != null && availableConfigs != null && availableConfigs.contains(activeConfig)) { configComboBox.setSelectedItem(activeConfig); }
      else { configComboBox.setSelectedItem("Keine"); }
      for(ItemListener l : listeners) configComboBox.addItemListener(l);
-     log.debug("Konfigurations-ComboBox Update abgeschlossen.");
+     log.debug("Konfig-ComboBox Update fertig.");
  }
 
  /** Aktualisiert die PDF-ComboBox. */
@@ -282,8 +271,8 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      if (docs != null && !docs.isEmpty()) { for(PdfDokument d:docs) pdfComboBox.addItem(d); exportExcelButton.setEnabled(true); hasEl = true; } else { exportExcelButton.setEnabled(false); }
      boolean selSet = false;
      if (selectedPdf instanceof PdfDokument && docs != null && docs.contains(selectedPdf)) { pdfComboBox.setSelectedItem(selectedPdf); selSet = true; log.debug("--> PDF Auswahl wiederhergestellt."); }
-     else if (hasEl) { PdfDokument first = docs.get(0); pdfComboBox.setSelectedItem(first); selSet = true; log.info("--> Erstes PDF '{}' gesetzt.", first.getSourcePdf()); if(!Objects.equals(model.getAusgewaehltesDokument(), first)) { log.info("---> Rufe setAusgewaehltesDokument auf..."); model.setAusgewaehltesDokument(first); } else { log.debug("---> Modell aktuell. Manuelle GUI Updates."); updateTabelleComboBox(); updateDatenTabelle(); /* Invoice Panel wird vom Controller getriggert */}}
-     if (!selSet) { log.debug("--> Keine PDF Auswahl."); if(model.getAusgewaehltesDokument()!=null) model.setAusgewaehltesDokument(null); updateTabelleComboBox(); updateDatenTabelle(); updateInvoiceTypeDisplay(null); setRefreshButtonEnabled(false);}
+     else if (hasEl) { PdfDokument first = docs.get(0); pdfComboBox.setSelectedItem(first); selSet = true; log.info("--> Erstes PDF '{}' gesetzt.", first.getSourcePdf()); if(!Objects.equals(model.getAusgewaehltesDokument(), first)) { log.info("---> Rufe setAusgewaehltesDokument auf..."); model.setAusgewaehltesDokument(first); } else { log.debug("---> Modell aktuell. Updates triggern."); updateTabelleComboBox(); updateDatenTabelle(); /* Invoice Panel durch Controller */}}
+     if (!selSet) { log.debug("--> Keine PDF Auswahl."); if(model.getAusgewaehltesDokument()!=null) model.setAusgewaehltesDokument(null); updateTabelleComboBox(); updateDatenTabelle(); invoiceTypeCrudPanel.displayConfig(null); setRefreshButtonEnabled(false);} // CRUD Panel auch leeren
      for(ActionListener l:ls)pdfComboBox.addActionListener(l);
      log.info("MainFrame.updatePdfComboBox ENDE");
  }
@@ -309,18 +298,15 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
      if (dataOpt.isPresent()) {
          List<List<String>> data = dataOpt.get(); log.debug("--> Daten erhalten ({} Zeilen)", data.size());
          if (!data.isEmpty()) { Vector<String> h=new Vector<>(data.get(0));Vector<Vector<Object>> dv=new Vector<>(); for(int i=1;i<data.size();i++)dv.add(new Vector<>(data.get(i))); log.info("---> Setze Daten: {} Zeilen, {} Spalten", dv.size(), h.size()); tabellenModell.setDataVector(dv,h); logMessage("Zeige: "+model.getAusgewaehlteTabelle()); SwingUtilities.invokeLater(()->{if(datenTabelle.getColumnCount()>0){TabellenSpaltenAnpasser tca=new TabellenSpaltenAnpasser(datenTabelle); tca.adjustColumns(); TableColumnModel cm=datenTabelle.getColumnModel(); for(int i=0;i<cm.getColumnCount();i++){TableColumn c=cm.getColumn(i); int w=c.getPreferredWidth(); c.setPreferredWidth(w*2);}}});}
-         else { log.warn("--> Tabellendaten leer."); tabellenModell.setDataVector(new Vector<>(),new Vector<>()); logMessage("Tabelle ist leer: "+model.getAusgewaehlteTabelle()); }
-     } else { log.warn("--> Keine Tabellendaten vom Modell."); tabellenModell.setDataVector(new Vector<>(),new Vector<>()); String status; if(model.getAusgewaehltesDokument()!=null&&model.getAusgewaehlteTabelle()!=null)status="Keine Daten verfügbar."; else if(model.getAusgewaehltesDokument()!=null)status="Keine Tabelle ausgewählt."; else status="Kein PDF ausgewählt."; logMessage(status);}
+         else { log.warn("--> Tabellendaten leer."); tabellenModell.setDataVector(new Vector<>(), new Vector<>()); logMessage("Tabelle ist leer: "+model.getAusgewaehlteTabelle()); }
+     } else { log.warn("--> Keine Tabellendaten vom Modell."); tabellenModell.setDataVector(new Vector<>(), new Vector<>()); String status; if(model.getAusgewaehltesDokument()!=null&&model.getAusgewaehlteTabelle()!=null)status="Keine Daten verfügbar."; else if(model.getAusgewaehltesDokument()!=null)status="Keine Tabelle ausgewählt."; else status="Kein PDF ausgewählt."; logMessage(status);}
  }
 
  /** Fügt eine Nachricht zum Log-Textbereich hinzu. */
  public void logMessage(String nachricht) {
      SwingUtilities.invokeLater(() -> {
-         if (logTextArea != null) {
-             String timestamp = LocalDateTime.now().format(LOG_TIME_FORMATTER);
-             logTextArea.append(timestamp + " - " + nachricht + "\n");
-             logTextArea.setCaretPosition(logTextArea.getDocument().getLength());
-         } else { log.warn("LogTextArea ist null: '{}'", nachricht); }
+         if (logTextArea != null) { String ts=LocalDateTime.now().format(LOG_TIME_FORMATTER); logTextArea.append(ts + " - " + nachricht + "\n"); logTextArea.setCaretPosition(logTextArea.getDocument().getLength()); }
+         else { log.warn("LogTextArea ist null: '{}'", nachricht); }
      });
  }
 
@@ -330,37 +316,22 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  /** Setzt den Wert des Fortschrittsbalkens. */
  public void setProgressBarValue(int value) { SwingUtilities.invokeLater(() -> { progressBar.setValue(value); progressBar.setString(value + "%"); }); }
 
- /** Aktualisiert die Felder im "Table Definition Panel" und (de)aktiviert den Update-Button. */
+ /** Aktualisiert die Felder im CRUD-Panel (wird vom Controller aufgerufen). */
  public void updateInvoiceTypeDisplay(InvoiceTypeConfig config) {
-     SwingUtilities.invokeLater(() -> {
-         boolean enableUpdate = false;
-         if (config != null) {
-             txtDetectedKeyword.setText(config.getKeywordIncl1()); // Zeige primäres Keyword
-             txtDetectedType.setText(config.getType());
-             txtDetectedAreaType.setText(config.getAreaType());
-             txtDetectedFlavor.setText(config.getDefaultFlavor());
-             txtDetectedRowTol.setText(config.getDefaultRowTol());
-             // Update Button nur aktivieren, wenn es NICHT der Default-Typ "Others" ist
-             if (!DEFAULT_TYPE_KEYWORD_DISPLAY.equalsIgnoreCase(config.getIdentifyingKeyword())) {
-                 enableUpdate = true;
-             }
-         } else {
-             txtDetectedKeyword.setText("-"); txtDetectedType.setText("-"); txtDetectedAreaType.setText("-"); txtDetectedFlavor.setText("-"); txtDetectedRowTol.setText("-");
-         }
-         setUpdateCsvButtonEnabled(enableUpdate); // Aktiviere/Deaktiviere Update Button
-         // Refresh Button wird durch SELECTED_DOCUMENT Event gesteuert
-     });
+     // Delegiere an das CRUD Panel
+     if (invoiceTypeCrudPanel != null) {
+          invoiceTypeCrudPanel.displayConfig(config);
+     } else {
+          log.error("invoiceTypeCrudPanel ist null in updateInvoiceTypeDisplay!");
+     }
  }
 
  /** Setzt den Enabled-Status des Refresh-Buttons. */
  public void setRefreshButtonEnabled(boolean enabled) { SwingUtilities.invokeLater(() -> btnRefresh.setEnabled(enabled)); }
 
- /** Setzt den Enabled-Status des Update-CSV-Buttons. */
- public void setUpdateCsvButtonEnabled(boolean enabled) { SwingUtilities.invokeLater(() -> btnUpdateCsv.setEnabled(enabled)); }
-
+ // setUpdateCsvButtonEnabled wird nicht mehr direkt benötigt, da das CRUD-Panel seinen Button selbst verwaltet.
 
  // --- PropertyChangeListener Implementierung ---
- /** Reagiert auf Änderungen im Modell. */
  @Override
  public void propertyChange(PropertyChangeEvent evt) {
      String propertyName = evt.getPropertyName();
@@ -370,7 +341,12 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
               case AnwendungsModell.DOCUMENTS_UPDATED_PROPERTY:
                   log.info("-> propertyChange: DOCUMENTS_UPDATED");
                   updatePdfComboBox();
-                  if (model.getDokumente().isEmpty()) { updateInvoiceTypeDisplay(null); setRefreshButtonEnabled(false); setUpdateCsvButtonEnabled(false);}
+                  // Wenn Liste leer, auch CRUD Panel leeren/deaktivieren
+                  if (model.getDokumente().isEmpty()) {
+                      invoiceTypeCrudPanel.displayConfig(null);
+                      invoiceTypeCrudPanel.setFormEnabled(false);
+                      setRefreshButtonEnabled(false);
+                  }
                   break;
               case AnwendungsModell.SELECTED_DOCUMENT_PROPERTY:
                   log.info("-> propertyChange: SELECTED_DOCUMENT auf '{}'", evt.getNewValue());
@@ -394,7 +370,8 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
                        log.info("--> Aktualisiere GUI nach Neuverarbeitung.");
                        updateTabelleComboBox();
                        updateDatenTabelle();
-                       updateInvoiceTypeDisplay(reprocessedDoc.getDetectedInvoiceType()); // Aktualisiere auch Invoice Panel
+                       // Aktualisiere CRUD Panel mit den Daten aus dem neu verarbeiteten Dokument
+                       invoiceTypeCrudPanel.displayConfig(reprocessedDoc.getDetectedInvoiceType());
                   } else { log.debug("--> Event ist nicht für das aktuell ausgewählte Dokument."); }
                   break;
               default:
@@ -408,7 +385,7 @@ public class MainFrame extends JFrame implements PropertyChangeListener {
  /** Stellt sicher, dass die Auswahl in der Tabellen-ComboBox mit dem Modell übereinstimmt. */
  private void synchronizeTableComboBoxSelection() {
       ExtrahierteTabelle modelSelection = model.getAusgewaehlteTabelle();
-      if (tabelleComboBox != null && !Objects.equals(tabelleComboBox.getSelectedItem(), modelSelection)) { // Zusätzliche Null-Prüfung
+      if (tabelleComboBox != null && !Objects.equals(tabelleComboBox.getSelectedItem(), modelSelection)) {
            log.debug("--> Synchronisiere Tabellen ComboBox mit Modell: {}", modelSelection);
            ActionListener[] listeners = tabelleComboBox.getActionListeners(); for (ActionListener l : listeners) tabelleComboBox.removeActionListener(l);
            tabelleComboBox.setSelectedItem(modelSelection);
