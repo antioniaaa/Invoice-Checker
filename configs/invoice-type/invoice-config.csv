@@ -1,5 +1,5 @@
 Keyword; Keyword-Alternate; Type;Area-Type; Flavor, Row Tol
-E.DIS;;Netzbetreiber; Konfig*; Flavor*; Row Tol*
+E.DIS;;Netzbetreiber;EDis_small;lattice;2
 Avacon;;Netzbetreiber; Konfig*; Flavor*; Row Tol*
 WEMAG;;Netzbetreiber; Konfig*; Flavor*; Row Tol*
 Interconnector;;Direktvermarkter; Konfig*; Flavor*; Row Tol*
