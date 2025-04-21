@@ -20,436 +20,259 @@ import java.util.List;
 import java.util.regex.Matcher; // Für Regex-Suche
 import java.util.regex.Pattern; // Für Regex-Suche
 import java.util.regex.PatternSyntaxException; // Für Regex-Fehlerbehandlung
-import java.util.stream.Collectors; // Import hinzugefügt
 
-/**
- * Service-Klasse zum Verwalten der Rechnungstyp-Konfigurationen aus einer CSV-Datei.
- * Liest die Konfigurationen, identifiziert den passenden Typ für ein PDF
- * und ermöglicht das Bearbeiten der Konfigurationsdatei.
- */
 public class InvoiceTypeService {
 
-	private static final Logger log = LoggerFactory.getLogger(InvoiceTypeService.class);
-	private final Path configDir; // Verzeichnis: ./configs/invoice-type/
-	private final Path csvPath;   // Pfad zur invoice-config.csv
-	private final List<InvoiceTypeConfig> invoiceTypes = new ArrayList<>(); // Geladene Konfigurationen
-	private InvoiceTypeConfig defaultConfig = null; // Der "Others"-Eintrag als Fallback
+    private static final Logger log = LoggerFactory.getLogger(InvoiceTypeService.class);
+    private final Path configDir;
+    private final Path csvPath;
+    private List<InvoiceTypeConfig> invoiceTypes = new ArrayList<>();
+    private InvoiceTypeConfig defaultConfig = null;
 
-	// Konstanten für Dateiname und Unterverzeichnis
-	private static final String CSV_FILENAME = "invoice-config.csv";
-	private static final String CONFIG_SUBDIR = "invoice-type";
-	public static final String DEFAULT_KEYWORD = "Others"; // Spezielles Keyword für den Default
+    private static final String CSV_FILENAME = "invoice-config.csv";
+    private static final String CONFIG_SUBDIR = "invoice-type";
+    private static final String DEFAULT_IDENTIFYING_KEYWORD = "Others"; // Verwende KeywordIncl1 für Default
 
-	private static final int AREA_TYPE_COL_INDEX = 3; // 0-basiert
-	private static final int FLAVOR_COL_INDEX = 4;
-	private static final int ROW_TOL_COL_INDEX = 5;
+    // --- Spaltenindizes (0-basiert) ---
+    private static final int COL_TYPE = 0;
+    private static final int COL_KEY_INC1 = 1;
+    private static final int COL_KEY_INC2 = 2;
+    private static final int COL_KEY_INC3 = 3;
+    private static final int COL_KEY_EXC1 = 4;
+    private static final int COL_KEY_EXC2 = 5;
+    private static final int COL_AREA_TYPE = 6;
+    private static final int COL_FLAVOR = 7;
+    private static final int COL_ROW_TOL = 8;
+    private static final int EXPECTED_COLUMNS = 9; // Anzahl erwarteter Spalten
 
-	/**
-	 * Konstruktor. Legt die Pfade fest, stellt sicher, dass die CSV-Datei existiert
-	 * (erstellt sie ggf. mit Defaults) und lädt die Konfigurationen.
-	 */
-	public InvoiceTypeService() {
-		// Pfad zum Unterverzeichnis im Root-Verzeichnis des Programms
-		Path baseDir = Paths.get("").toAbsolutePath(); // Aktuelles Arbeitsverzeichnis
-		this.configDir = baseDir.resolve("configs").resolve(CONFIG_SUBDIR); // ./configs/invoice-type/
-		this.csvPath = this.configDir.resolve(CSV_FILENAME); // ./configs/invoice-type/invoice-config.csv
 
-		ensureConfigFileExists(); // Stellt sicher, dass Ordner und Default-Datei existieren
-		loadConfigsFromCsv(); // Lädt Konfigurationen beim Start
-	}
+    public InvoiceTypeService() {
+        Path baseDir = Paths.get("").toAbsolutePath();
+        this.configDir = baseDir.resolve("configs").resolve(CONFIG_SUBDIR);
+        this.csvPath = this.configDir.resolve(CSV_FILENAME);
+        ensureConfigFileExists();
+        loadConfigsFromCsv();
+    }
 
-	/**
-	 * Stellt sicher, dass das Konfig-Verzeichnis und die CSV-Datei existieren.
-	 * Erstellt die CSV-Datei mit Standardinhalt, falls sie nicht vorhanden ist.
-	 */
-	private void ensureConfigFileExists() {
-		try {
-			// Erstelle das Verzeichnis (und übergeordnete), falls nicht vorhanden
-			Files.createDirectories(configDir);
-			// Prüfe, ob die CSV-Datei existiert
-			if (!Files.exists(csvPath)) {
-				log.info("Konfigurationsdatei {} nicht gefunden, erstelle Standarddatei.", csvPath.toAbsolutePath());
-				createDefaultCsv(); // Erstelle Datei mit Defaults
-			} else if (!Files.isReadable(csvPath)) {
-				log.error("Keine Leseberechtigung für Konfigurationsdatei: {}", csvPath.toAbsolutePath());
-				// Programm wird versuchen weiterzulaufen, aber ohne geladene Konfigs
-			} else {
-				log.info("Verwende Konfigurationsdatei: {}", csvPath.toAbsolutePath());
-			}
-		} catch (IOException e) {
-			log.error("Fehler beim Sicherstellen/Erstellen der Konfigurationsdatei {}: {}", csvPath.toAbsolutePath(), e.getMessage());
-		} catch (Exception e) {
-			log.error("Unerwarteter Fehler beim Initialisieren des InvoiceTypeService-Pfades.", e);
-		}
-	}
+    private void ensureConfigFileExists() {
+        try {
+            Files.createDirectories(configDir);
+            if (!Files.exists(csvPath)) {
+                log.info("Konfigurationsdatei {} nicht gefunden, erstelle Standarddatei.", csvPath.toAbsolutePath());
+                createDefaultCsv();
+            } else if (!Files.isReadable(csvPath)) {
+                 log.error("Keine Leseberechtigung für Konfigurationsdatei: {}", csvPath.toAbsolutePath());
+            } else {
+                 log.info("Verwende Invoice-Type-Konfigurationsdatei: {}", csvPath.toAbsolutePath());
+            }
+        } catch (IOException e) {
+            log.error("Fehler beim Sicherstellen/Erstellen der Invoice-Type-Konfigurationsdatei {}: {}", csvPath.toAbsolutePath(), e.getMessage());
+        }
+    }
 
-	/**
-	 * Erstellt eine Standard-CSV-Datei mit Beispieldaten, falls keine existiert.
-	 */
-	private void createDefaultCsv() {
-		// Definiere Header und Standardinhalt
-		String defaultContent =
-				"Keyword;Keyword-Alternate;Type;Area-Type;Flavor;Row Tol\n" +
-						"E\\.DIS.*;;Netzbetreiber;Konfig;lattice;2\n" + // Beispiel mit Regex: E.DIS gefolgt von irgendwas
-						"Avacon.* AG;;Netzbetreiber;Konfig*;lattice;2\n" + // Beispiel mit Regex
-						"WEMAG;;Netzbetreiber;Konfig*;lattice;2\n" +
-						"Interconnector;;Direktvermarkter;Konfig*;lattice;2\n" +
-						"Next Kraftwerke;;Direktvermarkter;Konfig;lattice;2\n" + // Beispiel mit Leerzeichen
-						"Quadra;;Direktvermarkter;Konfig;lattice;2\n" +
-						DEFAULT_KEYWORD + ";;Others;Konfig;stream;5\n"; // Default mit Stream und anderer Toleranz
+    /** Erstellt eine Standard-CSV-Datei mit der neuen Spaltenstruktur. */
+    private void createDefaultCsv() {
+        String defaultContent =
+                "Type;Keyword_incl_1;Keyword_incl_2;Keyword_incl_3;Keyword_excl_1;Keyword_excl_2;Area-Type;Flavor;Row Tol\n" + // Header angepasst
+                "Netzbetreiber;E\\.DIS.*;Marktprämie;;Messstelle;;EDis_small;lattice;2\n" + // Keyword 1 + 2 müssen da sein, Messstelle nicht
+                "Netzbetreiber;Avacon.* AG;Marktprämie;;Messstelle;;Konfig*;Flavor*;Row Tol*\n" + // Keyword 1 + 2 müssen da sein, Messstelle nicht
+                "Netzbetreiber;WEMAG;Marktprämie;;;;Konfig*;Flavor*;Row Tol*\n" + // Keyword 1 + 2 müssen da sein
+                "Direktvermarkter;Interconnector;;;;;Konfig*;Flavor*;Row Tol*\n" + // Nur Keyword 1
+                "Direktvermarkter;Next;;;;;Konfig*;Flavor*;Row Tol*\n" +
+                "Direktvermarkter;Quadra;;;;;Konfig*;Flavor*;Row Tol*\n" +
+                "Others;" + DEFAULT_IDENTIFYING_KEYWORD + ";;;;;Konfig*;stream;5\n"; // Default-Keyword in Spalte 1
+        try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            writer.write(defaultContent);
+            log.info("Standard-Invoice-Type-Datei {} erstellt.", csvPath.toAbsolutePath());
+        } catch (IOException e) {
+            log.error("Konnte Standard-Invoice-Type-Datei nicht schreiben: {}", csvPath.toAbsolutePath(), e);
+        }
+    }
 
-		try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8,
-				StandardOpenOption.CREATE,      // Erstellen, falls nicht da
-				StandardOpenOption.WRITE,       // Zum Schreiben öffnen
-				StandardOpenOption.TRUNCATE_EXISTING)) { // Überschreiben, falls schon da
-			writer.write(defaultContent);
-			log.info("Standard-Konfigurationsdatei {} erfolgreich erstellt.", csvPath.toAbsolutePath());
-		} catch (IOException e) {
-			log.error("Konnte Standard-Konfigurationsdatei nicht schreiben: {}", csvPath.toAbsolutePath(), e);
-		}
-	}
+    /** Lädt die Konfigurationen aus der CSV-Datei mit neuer Struktur. */
+    private synchronized void loadConfigsFromCsv() {
+        List<InvoiceTypeConfig> tempConfigs = new ArrayList<>();
+        InvoiceTypeConfig tempDefaultConfig = null;
 
-	/**
-	 * Lädt die Konfigurationen aus der CSV-Datei in die `invoiceTypes`-Liste.
-	 * Setzt den `defaultConfig` basierend auf dem Keyword "Others".
-	 */
-	private synchronized void loadConfigsFromCsv() {
-		invoiceTypes.clear(); // Alte Liste leeren vor dem Neuladen
-		defaultConfig = null; // Default zurücksetzen
+        if (!Files.exists(csvPath) || !Files.isReadable(csvPath)) {
+            log.error("Kann Invoice-Typen nicht laden: {} nicht lesbar/existent.", csvPath.toAbsolutePath());
+            tempDefaultConfig = createTempDefault(); tempConfigs.add(tempDefaultConfig);
+        } else {
+            log.info("Lade Rechnungstypen aus CSV: {}", csvPath.toAbsolutePath());
+            try (BufferedReader reader = Files.newBufferedReader(csvPath, StandardCharsets.UTF_8)) {
+                String line; boolean isHeader = true; int lineNumber = 0;
+                while ((line = reader.readLine()) != null) {
+                    lineNumber++;
+                    if (isHeader || line.trim().isEmpty() || line.trim().startsWith("#")) { isHeader = false; continue; }
 
-		// Prüfe erneut, ob Datei existiert und lesbar ist
-		if (!Files.exists(csvPath) || !Files.isReadable(csvPath)) {
-			log.error("Kann Konfigurationen nicht laden, da {} nicht existiert oder nicht lesbar ist.", csvPath.toAbsolutePath());
-			createDefaultConfigFallback(); // Erstelle internen Notfall-Default
-			return;
-		}
+                    String[] parts = line.split(";", -1);
+                    if (parts.length >= EXPECTED_COLUMNS) { // Prüfe auf neue Spaltenanzahl
+                        InvoiceTypeConfig config = new InvoiceTypeConfig(
+                            parts[COL_TYPE], parts[COL_KEY_INC1], parts[COL_KEY_INC2], parts[COL_KEY_INC3],
+                            parts[COL_KEY_EXC1], parts[COL_KEY_EXC2], parts[COL_AREA_TYPE],
+                            parts[COL_FLAVOR], parts[COL_ROW_TOL]
+                        );
+                        tempConfigs.add(config);
+                        if (DEFAULT_IDENTIFYING_KEYWORD.equalsIgnoreCase(config.getIdentifyingKeyword())) {
+                            tempDefaultConfig = config;
+                        }
+                        log.trace("CSV-Zeile {} geladen: {}", lineNumber, config);
+                    } else { log.warn("Überspringe ungültige CSV-Zeile {} ({} Spalten statt {}): {}", lineNumber, parts.length, EXPECTED_COLUMNS, line); }
+                }
+                if (tempDefaultConfig == null && !tempConfigs.isEmpty()) { log.warn("Kein '{}' Keyword in CSV gefunden.", DEFAULT_IDENTIFYING_KEYWORD); tempDefaultConfig = createTempDefault(); tempConfigs.add(tempDefaultConfig); }
+                else if (tempConfigs.isEmpty()) { log.warn("CSV-Datei {} war leer/ungültig.", csvPath.toAbsolutePath()); tempDefaultConfig = createTempDefault(); tempConfigs.add(tempDefaultConfig); }
+                log.info("{} Rechnungstypen erfolgreich aus {} geladen.", tempConfigs.size(), csvPath.toAbsolutePath());
+            } catch (IOException e) { log.error("Fehler beim Lesen der Invoice-Type-Datei {}: {}", csvPath.toAbsolutePath(), e); tempDefaultConfig = createTempDefault(); tempConfigs.add(tempDefaultConfig); }
+        }
+        // Atomares Update
+        synchronized(this.invoiceTypes) { this.invoiceTypes.clear(); this.invoiceTypes.addAll(tempConfigs); this.defaultConfig = tempDefaultConfig;}
+    }
 
-		log.info("Lade Rechnungstypen aus CSV: {}", csvPath.toAbsolutePath());
-		try (BufferedReader reader = Files.newBufferedReader(csvPath, StandardCharsets.UTF_8)) {
-			String line;
-			boolean isHeader = true;
-			int lineNumber = 0;
-			while ((line = reader.readLine()) != null) {
-				lineNumber++;
-				if (isHeader || line.trim().isEmpty() || line.trim().startsWith("#")) {
-					// Erste Zeile ist Header, überspringe leere Zeilen und Kommentare (#)
-					isHeader = false;
-					continue;
-				}
+    /** Erstellt temporären Default. */
+    private InvoiceTypeConfig createTempDefault() {
+        return new InvoiceTypeConfig("Others", DEFAULT_IDENTIFYING_KEYWORD, "", "", "", "", InvoiceTypeConfig.USE_MANUAL_CONFIG, InvoiceTypeConfig.USE_MANUAL_FLAVOR, InvoiceTypeConfig.USE_MANUAL_ROW_TOL);
+    }
 
-				// Teile Zeile am Semikolon, erwarte genau 6 Spalten
-				String[] parts = line.split(";", -1); // -1, um leere Spalten am Ende zu behalten
-				if (parts.length >= 6) {
-					// Erstelle Konfigurationsobjekt, trimme Werte
-					InvoiceTypeConfig config = new InvoiceTypeConfig(
-							parts[0], // Keyword
-							parts[1], // Keyword-Alternate
-							parts[2], // Type
-							parts[3], // Area-Type
-							parts[4], // Flavor
-							parts[5]  // Row Tol
-							);
-					invoiceTypes.add(config); // Füge zur Liste hinzu
+    /**
+     * Findet Konfig für PDF basierend auf neuer Keyword-Logik (AND für Include, NOT für Exclude).
+     */
+    public synchronized InvoiceTypeConfig findConfigForPdf(PDDocument pdfDocument) {
+        InvoiceTypeConfig fallbackConfig = (this.defaultConfig != null) ? this.defaultConfig : createTempDefault();
+        if (pdfDocument == null) return fallbackConfig;
 
-					// Speichere den "Others"-Eintrag als Default-Konfiguration
-					if (DEFAULT_KEYWORD.equalsIgnoreCase(config.getKeyword())) {
-						defaultConfig = config;
-					}
-					log.trace("CSV-Zeile {} geladen: {}", lineNumber, config);
-				} else {
-					log.warn("Überspringe ungültige CSV-Zeile {} ({} Spalten statt erwarteten 6): {}", lineNumber, parts.length, line);
-				}
-			}
-			log.info("{} Rechnungstypen erfolgreich aus {} geladen.", invoiceTypes.size(), csvPath.toAbsolutePath());
+        String text = "";
+        try { // Textextraktion (nur erste Seite)
+            if (pdfDocument.getNumberOfPages() > 0) { PDFTextStripper s=new PDFTextStripper(); s.setStartPage(1); s.setEndPage(1); text=s.getText(pdfDocument); }
+        } catch (Exception e) { log.error("Fehler Textextraktion: {}", e.getMessage()); }
 
-			// Wenn nach dem Lesen kein "Others" gefunden wurde, erstelle einen Fallback
-			if (defaultConfig == null && !invoiceTypes.isEmpty()) {
-				log.warn("Kein '{}' Keyword in CSV gefunden. Erstelle internen Fallback.", DEFAULT_KEYWORD);
-				createDefaultConfigFallback();
-			} else if (invoiceTypes.isEmpty()) {
-				log.warn("CSV-Datei {} war leer oder enthielt nur ungültige Zeilen. Erstelle internen Fallback.", csvPath.toAbsolutePath());
-				createDefaultConfigFallback();
-			}
+        if (text.isEmpty()) return fallbackConfig;
 
-		} catch (IOException e) {
-			log.error("Fehler beim Lesen der Konfigurationsdatei {}: {}", csvPath.toAbsolutePath(), e);
-			createDefaultConfigFallback(); // Erstelle internen Fallback bei Lesefehler
-		}
-	}
+        List<InvoiceTypeConfig> currentConfigs;
+        synchronized(this.invoiceTypes) { currentConfigs = new ArrayList<>(this.invoiceTypes); }
 
-	/**
-	 * Erstellt eine interne Fallback-Default-Konfiguration, falls das Laden
-	 * aus der CSV fehlschlägt oder der 'Others'-Eintrag fehlt.
-	 */
-	private void createDefaultConfigFallback() {
-		log.warn("Erstelle internen Fallback-Default ('{}', stream, 5).", DEFAULT_KEYWORD);
-		// Definiere einen sicheren Standardwert
-		this.defaultConfig = new InvoiceTypeConfig(DEFAULT_KEYWORD, "", "Others", "Konfig", "stream", "5");
-		// Füge zur Liste hinzu, falls die Liste leer ist, um sicherzustellen, dass immer ein Default existiert
-		if (invoiceTypes.isEmpty()) {
-			invoiceTypes.add(this.defaultConfig);
-		}
-	}
+        for (InvoiceTypeConfig config : currentConfigs) {
+            if (DEFAULT_IDENTIFYING_KEYWORD.equalsIgnoreCase(config.getIdentifyingKeyword())) continue; // Überspringe Default
 
-	/**
-	 * Versucht, die passende {@link InvoiceTypeConfig} für ein gegebenes PDF-Dokument zu finden.
-	 * Extrahiert Text von der ersten Seite des PDFs und sucht nach den definierten Keywords
-	 * (interpretiert als reguläre Ausdrücke, ignoriert Groß-/Kleinschreibung).
-	 * Sucht zuerst nach dem primären Keyword, dann nach dem alternativen Keyword.
-	 *
-	 * @param pdfDocument Das geladene {@link PDDocument}. Kann null sein.
-	 * @return Die passende {@link InvoiceTypeConfig} oder die Default-Konfiguration ("Others"),
-	 *         wenn kein spezifisches Keyword gefunden wird oder ein Fehler auftritt. Gibt nie null zurück.
-	 */
-	public synchronized InvoiceTypeConfig findConfigForPdf(PDDocument pdfDocument) {
-		// Fallback-Wert sicherstellen
-		InvoiceTypeConfig fallbackConfig = (this.defaultConfig != null) ? this.defaultConfig : createTempDefault();
+            // --- NEUE LOGIK ---
+            boolean allIncludesMatch = true;
+            // Prüfe Inklusions-Keywords (AND-Logik)
+            if (!isPatternFound(config.getKeywordIncl1(), text)) { allIncludesMatch = false; }
+            if (allIncludesMatch && !config.getKeywordIncl2().isEmpty() && !isPatternFound(config.getKeywordIncl2(), text)) { allIncludesMatch = false; }
+            if (allIncludesMatch && !config.getKeywordIncl3().isEmpty() && !isPatternFound(config.getKeywordIncl3(), text)) { allIncludesMatch = false; }
 
-		if (pdfDocument == null) {
-			log.warn("findConfigForPdf erhielt null Dokument, gebe Default zurück.");
-			return fallbackConfig;
-		}
+            // Wenn alle Includes passen, prüfe Excludes (NOT-Logik)
+            boolean anyExcludesMatch = false;
+            if (allIncludesMatch) {
+                if (!config.getKeywordExcl1().isEmpty() && isPatternFound(config.getKeywordExcl1(), text)) { anyExcludesMatch = true; }
+                if (!anyExcludesMatch && !config.getKeywordExcl2().isEmpty() && isPatternFound(config.getKeywordExcl2(), text)) { anyExcludesMatch = true; }
+            }
 
-		String text = "";
-		try {
-			// Extrahiere Text nur von der ersten Seite (effizienter für Keyword-Suche)
-			if (pdfDocument.getNumberOfPages() > 0) {
-				PDFTextStripper stripper = new PDFTextStripper();
-				stripper.setStartPage(1); // 1-basiert für PDFBox
-				stripper.setEndPage(1);   // Nur Seite 1
-				text = stripper.getText(pdfDocument);
-				// Optional: Wenn Keywords auch auf anderen Seiten stehen könnten:
-				// stripper.setStartPage(1);
-				// stripper.setEndPage(Math.min(3, pdfDocument.getNumberOfPages())); // z.B. die ersten 3 Seiten
-				// text = stripper.getText(pdfDocument);
-			} else {
-				log.warn("PDF hat keine Seiten zum Scannen für Keywords.");
-			}
-		} catch (IOException e) {
-			log.error("Fehler beim Extrahieren von Text aus PDF für Keyword-Suche: {}", e.getMessage());
-			// Fahre fort und gib Default zurück
-		}
+            // Wenn alle Includes matchen UND KEIN Exclude matched -> Treffer!
+            if (allIncludesMatch && !anyExcludesMatch) {
+                log.info("Keyword-Regel für '{}' in PDF gefunden. Verwende Konfig: {}", config.getIdentifyingKeyword(), config.getType());
+                return config;
+            }
+            // --- ENDE NEUE LOGIK ---
+        }
 
-		if (text.isEmpty()) {
-			log.warn("Kein Text aus PDF extrahiert, gebe Default zurück.");
-			return fallbackConfig;
-		}
+        log.info("Kein spezifisches Keyword-Pattern im PDF gefunden, verwende Default '{}'.", fallbackConfig.getIdentifyingKeyword());
+        return fallbackConfig;
+    }
 
-		// --- Suche nach Keywords mittels Regex ---
-		// Iteriere durch alle geladenen Konfigurationen (außer "Others")
-		for (InvoiceTypeConfig config : invoiceTypes) {
-			// Überspringe den Default-Eintrag selbst bei der Suche
-			if (DEFAULT_KEYWORD.equalsIgnoreCase(config.getKeyword())) {
-				continue;
-			}
+    /** Hilfsmethode für Regex-Suche. */
+    private boolean isPatternFound(String patternString, String text) {
+        if (patternString == null || patternString.isBlank() || text == null || text.isEmpty()) return false;
+        try {
+            Pattern pattern = Pattern.compile(patternString, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(text);
+            return matcher.find();
+        } catch (PatternSyntaxException e) { log.error("Ungültiges Regex '{}': {}", patternString, e.getMessage()); return false; }
+          catch (Exception e) { log.error("Fehler Regex-Suche '{}': {}", patternString, e.getMessage()); return false; }
+    }
 
-			// 1. Prüfe primäres Keyword (als Regex)
-			if (isPatternFound(config.getKeyword(), text)) {
-				log.info("Keyword-Pattern '{}' in PDF gefunden. Verwende Konfig: {}", config.getKeyword(), config.getType());
-				return config; // Gib die gefundene Konfiguration zurück
-			}
+    /** Öffnet CSV im Editor. */
+    public void openCsvInEditor() {
+        if (configDir == null) { JOptionPane.showMessageDialog(null, "Konfig-Verzeichnis nicht initialisiert!", "Fehler", JOptionPane.ERROR_MESSAGE); return; }
+        if (Files.exists(csvPath)) { try { if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) { Desktop.getDesktop().open(csvPath.toFile()); } else { JOptionPane.showMessageDialog(null, "Autom. Öffnen nicht unterstützt.\nPfad: " + csvPath.toAbsolutePath(), "Nicht unterstützt", JOptionPane.WARNING_MESSAGE); } } catch (Exception e) { JOptionPane.showMessageDialog(null, "Fehler beim Öffnen:\n" + e.getMessage() + "\nPfad: " + csvPath.toAbsolutePath(), "Fehler", JOptionPane.ERROR_MESSAGE); } }
+        else { JOptionPane.showMessageDialog(null, "Datei nicht gefunden:\n" + csvPath.toAbsolutePath(), "Fehler", JOptionPane.ERROR_MESSAGE); }
+    }
 
-			// 2. Prüfe alternatives Keyword (als Regex), falls vorhanden
-			if (isPatternFound(config.getKeywordAlternate(), text)) {
-				log.info("Alternatives Keyword-Pattern '{}' für '{}' in PDF gefunden. Verwende Konfig: {}", config.getKeywordAlternate(), config.getKeyword(), config.getType());
-				return config; // Gib die gefundene Konfiguration zurück
-			}
-		} // Ende der Schleife über Konfigurationen
+    /** Lädt Konfigs neu. */
+    public synchronized void reloadConfigs() { log.info("Lade Invoice-Type-Konfigurationen neu aus CSV..."); loadConfigsFromCsv(); }
 
-		// Kein spezifisches Keyword gefunden, gib Default ("Others") zurück
-		log.info("Kein spezifisches Keyword-Pattern im PDF gefunden, verwende Default '{}'.", fallbackConfig.getKeyword());
-		return fallbackConfig;
-	}
+    /** Gibt Kopie der Konfigs zurück. */
+    public synchronized List<InvoiceTypeConfig> getInvoiceTypes() { return new ArrayList<>(this.invoiceTypes); }
 
-	/**
-	 * Hilfsmethode, die prüft, ob ein Regex-Pattern im gegebenen Text vorkommt.
-	 * Ignoriert Groß-/Kleinschreibung und behandelt ungültige Patterns oder leere Eingaben.
-	 *
-	 * @param patternString Das zu suchende Regex-Pattern (kann null oder leer sein).
-	 * @param text Der Text, in dem gesucht werden soll (kann null sein).
-	 * @return true, wenn das Pattern gefunden wurde, sonst false.
-	 */
-	private boolean isPatternFound(String patternString, String text) {
-		// Prüfe auf ungültige oder leere Eingaben
-		if (patternString == null || patternString.isBlank() || text == null || text.isEmpty()) {
-			return false;
-		}
-		try {
-			// Erstelle das Pattern:
-			// - CASE_INSENSITIVE: Ignoriert Groß-/Kleinschreibung
-			// - MULTILINE: Lässt '^' und '$' auch Zeilenanfang/-ende matchen (optional)
-			// - DOTALL: Lässt den Punkt '.' auch Zeilenumbrüche matchen (kann nützlich sein)
-			Pattern pattern = Pattern.compile(patternString, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-			Matcher matcher = pattern.matcher(text);
-			// find() sucht nach dem Pattern *irgendwo* im Text
-			return matcher.find();
-		} catch (PatternSyntaxException e) {
-			// Logge Fehler, wenn das Pattern in der CSV ungültig ist
-			log.error("Ungültiges Regex-Pattern in CSV-Konfiguration: '{}' - Fehler: {}", patternString, e.getMessage());
-			return false; // Ungültiges Pattern kann nicht gefunden werden
-		} catch (Exception e) {
-			// Fange andere unerwartete Regex-Fehler ab
-			log.error("Unerwarteter Fehler bei Regex-Suche nach '{}': {}", patternString, e.getMessage());
-			return false;
-		}
-	}
+    /** Gibt Default-Konfig zurück. */
+    public synchronized InvoiceTypeConfig getDefaultConfig() { return defaultConfig != null ? defaultConfig : createTempDefault(); }
 
-	/**
-	 * Erstellt eine temporäre Default-Konfiguration, falls beim Laden
-	 * der CSV-Datei etwas schiefgeht oder der 'Others'-Eintrag fehlt.
-	 * @return Eine Standard-InvoiceTypeConfig.
-	 */
-	private InvoiceTypeConfig createTempDefault() {
-		// Gibt einen sicheren Standardwert zurück
-		return new InvoiceTypeConfig(DEFAULT_KEYWORD, "", "Others", "Konfig", "stream", "5");
-	}
 
-	/**
-	 * Versucht, die CSV-Konfigurationsdatei im Standard-Systemeditor zu öffnen.
-	 * Zeigt Fehlermeldungen als Dialog an, falls etwas schiefgeht.
-	 */
-	public void openCsvInEditor() {
-		if (configDir == null) {
-			JOptionPane.showMessageDialog(null, "Konfigurationsverzeichnis nicht initialisiert!", "Fehler", JOptionPane.ERROR_MESSAGE);
-			return;
-		}
-		if (Files.exists(csvPath)) {
-			try {
-				// Prüfe, ob Desktop-Aktionen unterstützt werden
-				if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-					Desktop.getDesktop().open(csvPath.toFile()); // Öffne Datei mit Standardanwendung
-					log.info("Versuche, {} im Standardeditor zu öffnen.", csvPath.toAbsolutePath());
-				} else {
-					log.warn("Desktop.open wird auf diesem System nicht unterstützt.");
-					JOptionPane.showMessageDialog(null, "Das automatische Öffnen der Datei wird nicht unterstützt.\nBitte öffnen Sie die Datei manuell:\n" + csvPath.toAbsolutePath(), "Nicht unterstützt", JOptionPane.WARNING_MESSAGE);
-				}
-			} catch (IOException e) {
-				log.error("Fehler beim Öffnen von {}: {}", csvPath.toAbsolutePath(), e.getMessage());
-				JOptionPane.showMessageDialog(null, "Fehler beim Öffnen der Datei:\n" + e.getMessage() + "\nPfad: " + csvPath.toAbsolutePath(), "Öffnen fehlgeschlagen", JOptionPane.ERROR_MESSAGE);
-			} catch (UnsupportedOperationException e) {
-				log.warn("Desktop.open nicht unterstützt: {}", e.getMessage());
-				JOptionPane.showMessageDialog(null, "Das automatische Öffnen der Datei wird nicht unterstützt.\nBitte öffnen Sie die Datei manuell:\n" + csvPath.toAbsolutePath(), "Nicht unterstützt", JOptionPane.WARNING_MESSAGE);
-			}
-		} else {
-			log.error("Konfigurationsdatei {} existiert nicht und kann nicht geöffnet werden.", csvPath.toAbsolutePath());
-			JOptionPane.showMessageDialog(null, "Konfigurationsdatei nicht gefunden:\n" + csvPath.toAbsolutePath() + "\nDie Datei wird beim nächsten Programmstart mit Defaults erstellt.", "Datei nicht gefunden", JOptionPane.ERROR_MESSAGE);
-			// Optional: Versuche, die Datei hier direkt zu erstellen?
-			// ensureConfigFileExists(); // Könnte hier aufgerufen werden
-		}
-	}
+    /**
+     * Aktualisiert die Konfiguration für ein bestimmtes primäres Keyword (Keyword_incl_1) in der CSV-Datei.
+     */
+    public synchronized boolean updateConfigInCsv(String keywordToUpdate, String newAreaType, String newFlavor, String newRowTol) {
+        if (keywordToUpdate == null || keywordToUpdate.isBlank() || DEFAULT_IDENTIFYING_KEYWORD.equalsIgnoreCase(keywordToUpdate)) {
+            log.error("Aktualisierung für ungültiges oder Default-Keyword '{}' nicht erlaubt.", keywordToUpdate);
+            return false;
+        }
+        if (configDir == null || !Files.exists(csvPath) || !Files.isReadable(csvPath) || !Files.isWritable(csvPath)) {
+            log.error("CSV-Datei {} nicht vorhanden/lesbar/schreibbar. Update nicht möglich.", csvPath.toAbsolutePath());
+            return false;
+        }
 
-	/**
-	 * Lädt die Konfigurationen neu aus der CSV-Datei.
-	 * Nützlich nach externen Änderungen an der Datei.
-	 */
-	public synchronized void reloadConfigs() {
-		log.info("Lade Invoice-Type-Konfigurationen neu aus CSV...");
-		loadConfigsFromCsv();
-		// Optional: Event feuern, damit die GUI sich aktualisiert, falls nötig
-		// support.firePropertyChange("invoiceTypesReloaded", null, getInvoiceTypes()); // Eigene Event-Logik nötig
-	}
+        log.info("Aktualisiere CSV für Keyword '{}': Area='{}', Flavor='{}', RowTol='{}'", keywordToUpdate, newAreaType, newFlavor, newRowTol);
+        List<String> originalLines;
+        List<String> modifiedLines = new ArrayList<>();
+        boolean lineUpdated = false;
+        boolean isHeader = true; // Um Header zu identifizieren
 
-	/**
-	 * Gibt eine Kopie der Liste der geladenen Rechnungstyp-Konfigurationen zurück.
-	 * @return Eine Liste von InvoiceTypeConfig-Objekten.
-	 */
-	public synchronized List<InvoiceTypeConfig> getInvoiceTypes() {
-		// Gib eine Kopie zurück, um externe Änderungen zu verhindern
-		return new ArrayList<>(this.invoiceTypes);
-	}
+        try {
+            originalLines = Files.readAllLines(csvPath, StandardCharsets.UTF_8);
 
-	/**
-	 * Gibt die Default-Konfiguration ("Others") zurück.
-	 * @return Die Default-InvoiceTypeConfig.
-	 */
-	public synchronized InvoiceTypeConfig getDefaultConfig() {
-		return defaultConfig != null ? defaultConfig : createTempDefault();
-	}
+            for (String line : originalLines) {
+                // Behalte Header und leere Zeilen/Kommentare
+                if (isHeader || line.trim().isEmpty() || line.trim().startsWith("#")) {
+                    modifiedLines.add(line);
+                    if (!line.trim().isEmpty() && !line.trim().startsWith("#")) isHeader = false; // Header wurde hinzugefügt
+                    continue;
+                }
 
-	/**
-	 * Aktualisiert die Konfiguration für einen bestimmten Keyword in der CSV-Datei.
-	 * Liest die Datei, modifiziert die entsprechende Zeile und schreibt die gesamte Datei neu.
-	 * Lädt anschließend die interne Konfigurationsliste neu.
-	 *
-	 * @param keyword Der primäre Keyword der zu aktualisierenden Zeile.
-	 * @param newAreaType Der neue Wert für "Area-Type" (z.B. der Name einer Bereichs-Konfig).
-	 * @param newFlavor Der neue Default-Flavor.
-	 * @param newRowTol Der neue Default-RowTol (als String).
-	 * @return true, wenn die Aktualisierung erfolgreich war, false sonst (z.B. Keyword nicht gefunden, IO-Fehler).
-	 */
-	public synchronized boolean updateConfigInCsv(String keyword, String newAreaType, String newFlavor, String newRowTol) {
-		if (keyword == null || keyword.isBlank() || DEFAULT_KEYWORD.equalsIgnoreCase(keyword)) {
-			log.error("Aktualisierung für ungültiges oder Default-Keyword '{}' nicht erlaubt.", keyword);
-			return false; // Verhindere Änderung des Defaults oder leerer Keywords
-		}
-		if (!Files.exists(csvPath) || !Files.isReadable(csvPath) || !Files.isWritable(csvPath)) {
-			log.error("CSV-Datei {} nicht vorhanden, lesbar oder schreibbar. Update nicht möglich.", csvPath.toAbsolutePath());
-			return false;
-		}
+                String[] parts = line.split(";", -1);
+                // Prüfe auf korrekte Spaltenzahl UND ob das erste Keyword übereinstimmt
+                if (parts.length >= EXPECTED_COLUMNS && keywordToUpdate.equals(parts[COL_KEY_INC1].trim())) {
+                    // Gefunden! Aktualisiere die spezifischen Spalten
+                    parts[COL_AREA_TYPE] = newAreaType != null ? newAreaType.trim() : ""; // Name der Bereichs-Konfig
+                    parts[COL_FLAVOR] = (newFlavor != null && !newFlavor.isBlank()) ? newFlavor.trim() : "lattice"; // Flavor
+                    parts[COL_ROW_TOL] = (newRowTol != null && !newRowTol.isBlank()) ? newRowTol.trim() : "2";   // Row Tol
 
-		log.info("Aktualisiere CSV für Keyword '{}': Area='{}', Flavor='{}', RowTol='{}'",
-				keyword, newAreaType, newFlavor, newRowTol);
+                    modifiedLines.add(String.join(";", parts)); // Füge modifizierte Zeile hinzu
+                    lineUpdated = true;
+                    log.debug("Zeile für Keyword '{}' aktualisiert: {}", keywordToUpdate, modifiedLines.get(modifiedLines.size()-1));
+                } else {
+                    // Nicht die gesuchte Zeile, füge sie unverändert hinzu
+                    modifiedLines.add(line);
+                }
+            }
 
-		List<String> originalLines;
-		List<String> modifiedLines = new ArrayList<>();
-		boolean lineUpdated = false;
+            // Schreibe modifizierte Daten zurück, wenn eine Zeile aktualisiert wurde
+            if (lineUpdated) {
+                try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                    for (int i = 0; i < modifiedLines.size(); i++) {
+                        writer.write(modifiedLines.get(i));
+                        if (i < modifiedLines.size() - 1) writer.newLine(); // Füge Zeilenumbruch hinzu, außer für die letzte Zeile
+                    }
+                }
+                log.info("CSV-Datei {} erfolgreich aktualisiert.", csvPath.toAbsolutePath());
+                loadConfigsFromCsv(); // Lade interne Liste neu
+                return true;
+            } else {
+                log.warn("Keyword '{}' wurde nicht in der CSV-Datei gefunden. Keine Aktualisierung.", keywordToUpdate);
+                return false;
+            }
 
-		try {
-			// Lese alle Zeilen der aktuellen CSV
-			originalLines = Files.readAllLines(csvPath, StandardCharsets.UTF_8);
-
-			for (String line : originalLines) {
-				// Behalte Header, Kommentare und leere Zeilen bei
-				if (line.trim().isEmpty() || line.trim().startsWith("#") || modifiedLines.isEmpty()) { // Annahme: Header ist erste nicht-leere Zeile
-					modifiedLines.add(line);
-					continue;
-				}
-
-				// Teile die Zeile und prüfe, ob es die gesuchte ist
-				String[] parts = line.split(";", -1);
-				if (parts.length > 0 && keyword.equals(parts[0].trim())) {
-					// Gefunden! Ersetze die Werte in den entsprechenden Spalten
-					if (parts.length > ROW_TOL_COL_INDEX) { // Stelle sicher, dass genug Spalten vorhanden sind
-						parts[AREA_TYPE_COL_INDEX] = newAreaType != null ? newAreaType.trim() : ""; // Bereichs-Konfig Name
-						parts[FLAVOR_COL_INDEX] = (newFlavor != null && !newFlavor.isBlank()) ? newFlavor.trim() : "lattice"; // Flavor mit Default
-						parts[ROW_TOL_COL_INDEX] = (newRowTol != null && !newRowTol.isBlank()) ? newRowTol.trim() : "2";   // Row Tol mit Default
-
-						// Baue die modifizierte Zeile wieder zusammen
-						modifiedLines.add(String.join(";", parts));
-						lineUpdated = true;
-						log.debug("Zeile für Keyword '{}' aktualisiert: {}", keyword, modifiedLines.get(modifiedLines.size()-1));
-					} else {
-						log.warn("Zeile für Keyword '{}' hat nicht genug Spalten zum Aktualisieren: {}", keyword, line);
-						modifiedLines.add(line); // Füge Originalzeile hinzu, wenn Update nicht möglich
-					}
-				} else {
-					// Nicht die gesuchte Zeile, füge sie unverändert hinzu
-					modifiedLines.add(line);
-				}
-			}
-
-			// Schreibe die modifizierten Zeilen zurück in die Datei (überschreiben)
-			if (lineUpdated) {
-				try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8,
-						StandardOpenOption.WRITE,
-						StandardOpenOption.TRUNCATE_EXISTING)) {
-					for (String updatedLine : modifiedLines) {
-						writer.write(updatedLine);
-						writer.newLine();
-					}
-				}
-				log.info("CSV-Datei {} erfolgreich aktualisiert.", csvPath.toAbsolutePath());
-				// Lade interne Konfigurationen neu, nachdem gespeichert wurde
-				loadConfigsFromCsv();
-				return true;
-			} else {
-				log.warn("Keyword '{}' wurde nicht in der CSV-Datei gefunden. Keine Aktualisierung.", keyword);
-				return false;
-			}
-
-		} catch (IOException e) {
-			log.error("Fehler beim Lesen/Schreiben der CSV-Datei {}: {}", csvPath.toAbsolutePath(), e.getMessage(), e);
-			return false;
-		}
-	}
+        } catch (IOException e) {
+            log.error("Fehler beim Lesen/Schreiben der CSV-Datei {}: {}", csvPath.toAbsolutePath(), e.getMessage(), e);
+            return false;
+        }
+    }
 }

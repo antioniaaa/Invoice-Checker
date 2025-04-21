@@ -28,109 +28,59 @@ public class ConfigurationService {
     private final Path configDir; // Verzeichnis: ./configs/area/
     private final ObjectMapper objectMapper;
 
-    private static final String AREA_CONFIG_SUBDIR = "area"; // Unterverzeichnis für Bereichs-Konfigs
+    private static final String AREA_CONFIG_SUBDIR = "area"; // Unterverzeichnis
 
     public ConfigurationService() {
         Path resolvedConfigDir = null;
         try {
             Path baseDir = Paths.get("").toAbsolutePath();
-            // Pfad zum Unterverzeichnis 'configs/area'
             resolvedConfigDir = baseDir.resolve("configs").resolve(AREA_CONFIG_SUBDIR);
-
-            if (!Files.exists(resolvedConfigDir)) {
-                Files.createDirectories(resolvedConfigDir);
-                log.info("Bereichs-Konfigurationsverzeichnis erstellt: {}", resolvedConfigDir.toAbsolutePath());
-            } else if (!Files.isDirectory(resolvedConfigDir)) {
-                log.error("'{}' existiert, ist aber kein Verzeichnis!", resolvedConfigDir.toAbsolutePath());
-                resolvedConfigDir = null;
-            } else {
-                log.info("Verwende Bereichs-Konfigurationsverzeichnis: {}", resolvedConfigDir.toAbsolutePath());
-            }
-        } catch (IOException e) {
-            log.error("Konnte Bereichs-Konfigurationsverzeichnis nicht erstellen/darauf zugreifen: {}", resolvedConfigDir, e);
-            resolvedConfigDir = null;
-        } catch (Exception e) {
-             log.error("Unerwarteter Fehler beim Initialisieren des Bereichs-Konfigurationsverzeichnisses.", e);
-             resolvedConfigDir = null;
-        }
+            if (!Files.exists(resolvedConfigDir)) { Files.createDirectories(resolvedConfigDir); log.info("Bereichs-Konfigurationsverzeichnis erstellt: {}", resolvedConfigDir.toAbsolutePath()); }
+            else if (!Files.isDirectory(resolvedConfigDir)) { log.error("'{}' existiert, ist aber kein Verzeichnis!", resolvedConfigDir.toAbsolutePath()); resolvedConfigDir = null; }
+            else { log.info("Verwende Bereichs-Konfigurationsverzeichnis: {}", resolvedConfigDir.toAbsolutePath()); }
+        } catch (Exception e) { log.error("Fehler Initialisieren Bereichs-Konfig-Verzeichnis.", e); resolvedConfigDir = null; }
         this.configDir = resolvedConfigDir;
-
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        this.objectMapper = new ObjectMapper(); this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
     }
 
     /** Speichert Konfiguration. */
     public void saveConfiguration(ExtractionConfiguration config) throws IOException, IllegalArgumentException {
         if (configDir == null) throw new IOException("Bereichs-Konfigurationsverzeichnis nicht verfügbar.");
         if (config == null || config.getName() == null || config.getName().isBlank()) throw new IllegalArgumentException("Konfiguration/Name darf nicht leer sein.");
-
-        String safeName = config.getName().replaceAll("[^a-zA-Z0-9\\-_\\.]", "_");
-        String fileName = safeName + ".json";
-        Path filePath = configDir.resolve(fileName);
+        String safeName = config.getName().replaceAll("[^a-zA-Z0-9\\-_\\.]", "_"); String fileName = safeName + ".json"; Path filePath = configDir.resolve(fileName);
         log.info("Speichere Bereichs-Konfiguration '{}' nach: {}", config.getName(), filePath.toAbsolutePath());
-        try {
-            objectMapper.writeValue(filePath.toFile(), config);
-        } catch (IOException e) {
-            log.error("Fehler beim Speichern der Bereichs-Konfiguration '{}': {}", config.getName(), e.getMessage());
-            throw e;
-        }
+        try { objectMapper.writeValue(filePath.toFile(), config); }
+        catch (IOException e) { log.error("Fehler beim Speichern der Bereichs-Konfiguration '{}': {}", config.getName(), e.getMessage()); throw e; }
     }
 
     /** Lädt Konfiguration. */
     public ExtractionConfiguration loadConfiguration(String name) {
         if (configDir == null) { log.error("Bereichs-Konfigurationsverzeichnis nicht initialisiert."); return null; }
         if (name == null || name.isBlank()) return null;
-
-        String safeName = name.replaceAll("[^a-zA-Z0-9\\-_\\.]", "_");
-        String fileName = safeName + ".json";
-        Path filePath = configDir.resolve(fileName);
-
-        if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
-            log.warn("Bereichs-Konfigurationsdatei nicht gefunden oder lesbar: {}", filePath.toAbsolutePath());
-            return null;
-        }
-
+        String safeName = name.replaceAll("[^a-zA-Z0-9\\-_\\.]", "_"); String fileName = safeName + ".json"; Path filePath = configDir.resolve(fileName);
+        if (!Files.exists(filePath) || !Files.isReadable(filePath)) { log.warn("Bereichs-Konfigurationsdatei nicht gefunden oder lesbar: {}", filePath.toAbsolutePath()); return null; }
         log.info("Lade Bereichs-Konfiguration '{}' von: {}", name, filePath.toAbsolutePath());
         try {
             ExtractionConfiguration config = objectMapper.readValue(filePath.toFile(), ExtractionConfiguration.class);
-            if (config != null && !name.equals(config.getName())) {
-                 log.warn("Name in Bereichs-Konfigdatei ('{}') weicht ab von '{}'. Setze Namen auf '{}'.", config.getName(), name, name);
-                 config.setName(name);
-            }
+            if (config != null && !name.equals(config.getName())) { log.warn("Name in Bereichs-Konfigdatei ('{}') weicht ab von '{}'. Setze Namen auf '{}'.", config.getName(), name, name); config.setName(name); }
             return config;
-        } catch (IOException e) {
-            log.error("Fehler beim Laden/Parsen der Bereichs-Konfiguration '{}': {}", name, e.getMessage(), e);
-            return null;
-        }
+        } catch (IOException e) { log.error("Fehler beim Laden/Parsen der Bereichs-Konfiguration '{}': {}", name, e.getMessage(), e); return null; }
     }
 
     /** Gibt Namen aller verfügbaren Bereichs-Konfigurationen zurück. */
     public List<String> getAvailableConfigurationNames() {
-        if (configDir == null || !Files.isDirectory(configDir)) {
-            return Collections.emptyList();
-        }
+        if (configDir == null || !Files.isDirectory(configDir)) { return Collections.emptyList(); }
         try (Stream<Path> files = Files.list(configDir)) {
-            return files
-                    .filter(Files::isRegularFile)
-                    .map(Path::getFileName).map(Path::toString)
-                    .filter(name -> name.toLowerCase().endsWith(".json"))
-                    .map(name -> name.substring(0, name.length() - ".json".length()))
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .collect(Collectors.toList());
-        } catch (IOException e) {
-            log.error("Fehler beim Auflisten der Bereichs-Konfigdateien in {}: {}", configDir.toAbsolutePath(), e.getMessage());
-            return Collections.emptyList();
-        }
+            return files.filter(Files::isRegularFile).map(Path::getFileName).map(Path::toString)
+                    .filter(name -> name.toLowerCase().endsWith(".json")).map(name -> name.substring(0, name.length() - ".json".length()))
+                    .sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList());
+        } catch (IOException e) { log.error("Fehler Auflisten Bereichs-Konfigdateien in {}: {}", configDir.toAbsolutePath(), e.getMessage()); return Collections.emptyList(); }
     }
 
     /** Lädt alle verfügbaren Bereichs-Konfigurationen. */
      public List<ExtractionConfiguration> loadAllConfigurations() {
-         List<String> names = getAvailableConfigurationNames();
-         List<ExtractionConfiguration> configs = new ArrayList<>();
-         for (String name : names) {
-             ExtractionConfiguration config = loadConfiguration(name);
-             if (config != null) configs.add(config);
-         }
+         List<String> names = getAvailableConfigurationNames(); List<ExtractionConfiguration> configs = new ArrayList<>();
+         for (String name : names) { ExtractionConfiguration config = loadConfiguration(name); if (config != null) configs.add(config); }
          configs.sort(Comparator.comparing(ExtractionConfiguration::getName, String.CASE_INSENSITIVE_ORDER));
          log.info("{} Bereichs-Konfiguration(en) erfolgreich geladen.", configs.size());
          return configs;

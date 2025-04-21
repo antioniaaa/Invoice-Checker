@@ -37,75 +37,66 @@ import java.nio.file.Files;
 //PDFBox für Keyword Suche
 import org.apache.pdfbox.pdmodel.PDDocument;
 
+
+import javax.swing.event.ChangeListener;
+import java.awt.event.ItemListener;
+import java.awt.AWTEvent; // Für gemeinsamen Parameter-Handler
+import java.util.Comparator;
+import java.util.stream.Collectors;
+
+import java.util.concurrent.ExecutionException; // Für SwingWorker Fehler
+
 /**
 * Der Controller verbindet die View (MainFrame) mit dem Model (AnwendungsModell).
 * Er reagiert auf Benutzeraktionen. Die Neuverarbeitung wird nur durch den Refresh-Button ausgelöst.
-* Die View-Referenz wird nach der Instanziierung gesetzt.
+* Enthält Logik zum Aktualisieren der Invoice-Type-Konfiguration in der CSV-Datei.
 */
 public class AppController {
  private static final Logger log = LoggerFactory.getLogger(AppController.class);
 
  private final AnwendungsModell model;
- private MainFrame view; // Wird nach Instanziierung gesetzt
+ private final MainFrame view; // View wird im Konstruktor übergeben
  private JFileChooser dateiAuswahlDialog;
- private InvoiceTypeConfig lastDetectedInvoiceType = null;
-
+ private InvoiceTypeConfig lastDetectedInvoiceType = null; // Merkt sich den zuletzt erkannten Typ
+ private static final String DEFAULT_INVOICE_KEYWORD = "Others";
+ 
  /**
-  * Konstruktor. Benötigt das Modell. Die View wird später gesetzt.
+  * Konstruktor. Initialisiert Modell und View und registriert die Listener.
   * @param model Das Anwendungsmodell. Darf nicht null sein.
+  * @param view Das Hauptfenster (GUI). Darf nicht null sein.
   */
- public AppController(AnwendungsModell model) {
-     if (model == null) {
-          throw new IllegalArgumentException("Modell darf im Controller nicht null sein!");
-     }
+ public AppController(AnwendungsModell model, MainFrame view) {
      this.model = model;
-     // View ist hier noch null, Listener werden später in setViewAndInitializeListeners registriert
- }
-
- /**
-  * Setzt die View-Referenz und initialisiert die Controller-Logik (Listener etc.).
-  * Sollte von MainApp aufgerufen werden, nachdem die View erstellt wurde.
-  * @param view Die MainFrame-Instanz. Darf nicht null sein.
-  */
- public void setViewAndInitializeListeners(MainFrame view) {
-     log.info("Setze View und initialisiere Controller-Listener...");
-     if (view == null) {
-         log.error("Übergebene View ist null! Listener können nicht registriert werden.");
-         throw new IllegalArgumentException("View darf in setViewAndInitializeListeners nicht null sein!");
+     this.view = view; // Referenz speichern
+     if (this.view == null || this.model == null) {
+          throw new IllegalArgumentException("Modell und View dürfen im Controller nicht null sein!");
      }
-     if (this.view != null) {
-          log.warn("View im Controller wird überschrieben! Alte View: {}, Neue View: {}", this.view, view);
-     }
-     this.view = view; // Speichere die View-Referenz
-
-     // Registriere alle Listener bei den Komponenten der (jetzt bekannten) View
-     initializeListeners();
+     initializeListeners(); // Listener registrieren
  }
-
 
  /**
   * Registriert alle notwendigen Listener bei den GUI-Komponenten der View.
-  * Wird von setViewAndInitializeListeners aufgerufen.
+  * Wird vom Konstruktor aufgerufen.
   */
  private void initializeListeners() {
       log.info("Initialisiere Controller-Listener für View...");
-      if (view == null) {
-          log.error("View ist null in initializeListeners!"); // Sollte nicht passieren nach setView...
+      if (view == null) { // Redundanter Check, aber sicher
+          log.error("View ist null in initializeListeners! Listener können nicht registriert werden.");
           return;
       }
-      // Listener registrieren
-      view.addLadeButtonAbrechnungListener(this::handleLadeAbrechnungAction);
-      view.addLadeButtonDetailsListener(this::handleLadePdfAktion);
+      // Registriere alle Listener bei den Komponenten der View
+      view.addLadeButtonAbrechnungListener(this::handleLadeAbrechnungAction); // Neuer Button Tab 1
+      view.addLadeButtonDetailsListener(this::handleLadePdfAktion);          // Alter Button Tab 2
       view.addExportButtonListener(this::handleExportExcelAktion);
-      view.addRefreshButtonListener(this::handleRefreshAction);
-      view.addEditCsvButtonListener(this::handleEditCsv);
-      view.addUpdateCsvButtonListener(this::handleUpdateCsvAction);
+      view.addRefreshButtonListener(this::handleRefreshAction);             // Refresh Button
+      view.addEditCsvButtonListener(this::handleEditCsv);                   // Edit CSV Button
+      view.addUpdateCsvButtonListener(this::handleUpdateCsvAction);         // Update CSV Button
       view.addPdfComboBoxListener(this::handlePdfComboBoxAuswahl);
       view.addTabelleComboBoxListener(this::handleTabelleComboBoxAuswahl);
-      view.addFlavorComboBoxListener(this::handleFlavorChange);
-      view.addRowToleranceSpinnerListener(this::handleRowTolChange);
-      view.addConfigMenuOpenListener(this::handleOpenConfigEditor);
-      view.addConfigSelectionListener(this::handleConfigSelectionChange);
+      view.addFlavorComboBoxListener(this::handleFlavorChange);             // Parameter (ohne Aktion)
+      view.addRowToleranceSpinnerListener(this::handleRowTolChange);         // Parameter (ohne Aktion)
+      view.addConfigMenuOpenListener(this::handleOpenConfigEditor);         // Menü für Bereichs-Editor
+      view.addConfigSelectionListener(this::handleConfigSelectionChange);     // Bereichs-Konfig-Auswahl (ohne Aktion)
 
       setupDateiAuswahlDialog();
       updateAvailableConfigsInView(); // Lade Bereichs-Konfigs beim Start
@@ -113,7 +104,7 @@ public class AppController {
  }
 
  /**
-  * Konfiguriert den JFileChooser.
+  * Konfiguriert den JFileChooser für PDF- und Excel-Dateien.
   */
  private void setupDateiAuswahlDialog() {
      dateiAuswahlDialog = new JFileChooser();
@@ -129,26 +120,45 @@ public class AppController {
      if (view == null) return;
      view.logMessage("Abrechnungs-Ladefunktion noch nicht implementiert.");
      JOptionPane.showMessageDialog(view, "Diese Ladefunktion ist noch nicht implementiert.", "Platzhalter", JOptionPane.INFORMATION_MESSAGE);
+     // TODO: Implementiere die Logik für diesen Button
  }
+
 
  /** Handler für den Lade-Button im Tab "Konfiguration & Details" */
  private void handleLadePdfAktion(ActionEvent e) {
       log.info("Lade PDF(s) Button (Details) geklickt.");
-      if (view == null) { log.error("View ist null..."); return; }
+      if (view == null) { log.error("View ist null in handleLadePdfAktion"); return; }
+
       view.logMessage("Öffne Dateiauswahl zum Laden für Detailansicht...");
-      dateiAuswahlDialog.setDialogTitle("PDF(s) für Detailansicht auswählen"); dateiAuswahlDialog.setMultiSelectionEnabled(true); dateiAuswahlDialog.setFileFilter(new FileNameExtensionFilter("PDF Dokumente", "pdf"));
-      int ret = dateiAuswahlDialog.showOpenDialog(view);
-      if (ret == JFileChooser.APPROVE_OPTION) {
-          File[] files = dateiAuswahlDialog.getSelectedFiles();
-          if (files != null && files.length > 0) {
-              List<Path> pdfPaths = new ArrayList<>(); for(File f : files) pdfPaths.add(f.toPath());
-              log.info("Ausgewählte Dateien: {}", Arrays.toString(files));
-              view.logMessage("Verarbeite " + pdfPaths.size() + " PDF(s) für Detailansicht...");
+      dateiAuswahlDialog.setDialogTitle("PDF(s) für Detailansicht auswählen");
+      dateiAuswahlDialog.setMultiSelectionEnabled(true);
+      dateiAuswahlDialog.setFileFilter(new FileNameExtensionFilter("PDF Dokumente", "pdf"));
+
+      int rueckgabeWert = dateiAuswahlDialog.showOpenDialog(view);
+      if (rueckgabeWert == JFileChooser.APPROVE_OPTION) {
+          File[] ausgewaehlteDateien = dateiAuswahlDialog.getSelectedFiles();
+          if (ausgewaehlteDateien != null && ausgewaehlteDateien.length > 0) {
+              List<Path> pdfPfade = new ArrayList<>();
+              for (File datei : ausgewaehlteDateien) { pdfPfade.add(datei.toPath()); }
+              log.info("Ausgewählte Dateien: {}", Arrays.toString(ausgewaehlteDateien));
+              view.logMessage("Verarbeite " + pdfPfade.size() + " PDF(s) für Detailansicht...");
               view.setProgressBarVisible(true); view.setProgressBarValue(0);
+
               Map<String, String> parameterGui = getCurrentParametersFromGui();
-              model.ladeUndVerarbeitePdfs(pdfPaths, parameterGui,
-                 processedDoc -> { /* Status */ if(processedDoc!=null) SwingUtilities.invokeLater(()->view.logMessage("Verarbeitet:"+processedDoc.getSourcePdf()+(processedDoc.getError()!=null?" [FEHLER]":""))); },
-                 progress -> { /* Progress */ SwingUtilities.invokeLater(()->{view.setProgressBarValue((int)(progress*100)); if(progress>=1.0){ Timer t=new Timer(2000,ae->view.setProgressBarVisible(false)); t.setRepeats(false);t.start();}}); }
+              // Rufe Modell auf (überladene Methode). Das Modell holt die aktive Konfig selbst.
+              model.ladeUndVerarbeitePdfs(pdfPfade, parameterGui,
+                 processedDoc -> { // Status Callback
+                     if (processedDoc != null) {
+                          log.info("Callback nach Verarbeitung empfangen für: {}", processedDoc.getSourcePdf());
+                          SwingUtilities.invokeLater(() -> view.logMessage("Verarbeitet:"+processedDoc.getSourcePdf()+(processedDoc.getError()!=null?" [FEHLER]":"")));
+                     } else { log.info("Callback empfangen (Dokument war null)."); }
+                 },
+                 progress -> { // Progress Callback
+                      SwingUtilities.invokeLater(()->{
+                           view.setProgressBarValue((int)(progress*100));
+                           if(progress>=1.0){ Timer t=new Timer(2000,ae->view.setProgressBarVisible(false)); t.setRepeats(false);t.start();}
+                      });
+                 }
               );
           } else { log.warn("Keine Dateien ausgewählt."); view.logMessage("Keine Dateien ausgewählt.");}
       } else { log.info("Dateiauswahl abgebrochen."); view.logMessage("Dateiauswahl abgebrochen.");}
@@ -157,12 +167,18 @@ public class AppController {
  /** Behandelt den Klick auf den "Nach Excel exportieren"-Button. */
  private void handleExportExcelAktion(ActionEvent e) {
      log.info("Export nach Excel Button geklickt.");
-     if (view == null) { log.error("View ist null..."); return; }
-     dateiAuswahlDialog.setDialogTitle("Excel speichern"); dateiAuswahlDialog.setMultiSelectionEnabled(false); dateiAuswahlDialog.setFileFilter(new FileNameExtensionFilter("Excel (*.xlsx)", "xlsx")); dateiAuswahlDialog.setSelectedFile(new File("Export.xlsx"));
-     if(dateiAuswahlDialog.showSaveDialog(view) == JFileChooser.APPROVE_OPTION) {
-         Path ziel = dateiAuswahlDialog.getSelectedFile().toPath(); if(!ziel.toString().toLowerCase().endsWith(".xlsx")) ziel=ziel.resolveSibling(ziel.getFileName()+".xlsx");
-         final Path finalZiel = ziel; view.logMessage("Exportiere nach " + finalZiel.getFileName() + "..."); view.setProgressBarVisible(true); view.setProgressBarValue(0);
-         new SwingWorker<Void,Void>(){ boolean ok=false; String err=null; @Override protected Void doInBackground(){try{model.exportiereAlleNachExcel(finalZiel); ok=true;} catch(Exception ex){err=ex.getMessage();log.error("Excel Export Fehler",ex);} finally{SwingUtilities.invokeLater(()->{view.setProgressBarValue(100); new Timer(1000,ae->view.setProgressBarVisible(false)).start();});} return null;} @Override protected void done(){if(ok)JOptionPane.showMessageDialog(view,"Export erfolgreich:\n"+finalZiel,"Erfolg",1); else JOptionPane.showMessageDialog(view,"Export fehlgeschlagen.\n"+err,"Fehler",0); view.logMessage(ok?"Export fertig.":"Export fehlgeschlagen.");}}.execute();
+     if (view == null) { log.error("View ist null in handleExportExcelAktion"); return; }
+     dateiAuswahlDialog.setDialogTitle("Excel-Datei speichern unter..."); dateiAuswahlDialog.setMultiSelectionEnabled(false); dateiAuswahlDialog.setFileFilter(new FileNameExtensionFilter("Excel Arbeitsmappe (*.xlsx)", "xlsx")); dateiAuswahlDialog.setSelectedFile(new File("Extrahierte_Tabellen.xlsx"));
+     int ret = dateiAuswahlDialog.showSaveDialog(view);
+     if (ret == JFileChooser.APPROVE_OPTION) {
+          File file = dateiAuswahlDialog.getSelectedFile(); Path ziel = file.toPath(); if(!ziel.toString().toLowerCase().endsWith(".xlsx")) ziel = ziel.resolveSibling(ziel.getFileName()+".xlsx");
+          final Path finalZiel = ziel; view.logMessage("Exportiere nach " + finalZiel.getFileName() + "..."); view.setProgressBarVisible(true); view.setProgressBarValue(0);
+          // SwingWorker für den Export im Hintergrund
+          new SwingWorker<Void,Void>(){
+              boolean erfolg=false; String fehler=null;
+              @Override protected Void doInBackground(){try{model.exportiereAlleNachExcel(finalZiel); erfolg=true;} catch(Exception ex){fehler=ex.getMessage();log.error("Excel Export Fehler",ex);} finally{SwingUtilities.invokeLater(()->{view.setProgressBarValue(100); new Timer(1000,ae->view.setProgressBarVisible(false)).start();});} return null;}
+              @Override protected void done(){if(erfolg)JOptionPane.showMessageDialog(view,"Export erfolgreich nach\n"+finalZiel,"Erfolg",JOptionPane.INFORMATION_MESSAGE); else JOptionPane.showMessageDialog(view,"Export fehlgeschlagen.\n"+fehler,"Fehler",JOptionPane.ERROR_MESSAGE); view.logMessage(erfolg?"Export fertig.":"Export fehlgeschlagen.");}
+          }.execute();
      } else { log.info("Export abgebrochen."); view.logMessage("Export abgebrochen."); }
  }
 
@@ -170,10 +186,14 @@ public class AppController {
  private void handlePdfComboBoxAuswahl(ActionEvent e) {
      if ("comboBoxChanged".equals(e.getActionCommand()) && view != null) {
           PdfDokument selectedDoc = (PdfDokument) view.getPdfComboBox().getSelectedItem();
+          // Aktualisiere das Modell nur, wenn sich die Auswahl wirklich geändert hat
           if (!Objects.equals(model.getAusgewaehltesDokument(), selectedDoc)) {
               log.info("PDF ComboBox Auswahl geändert zu: {}", (selectedDoc != null ? selectedDoc.getSourcePdf() : "null"));
-              model.setAusgewaehltesDokument(selectedDoc); // Löst Events aus
-              // Der Aufruf zum Aktualisieren des Invoice Panels erfolgt jetzt im PropertyChangeListener der View
+              // Setze das neue Dokument im Modell (löst SELECTED_DOCUMENT_PROPERTY aus)
+              model.setAusgewaehltesDokument(selectedDoc);
+              // Aktualisiere das InvoiceType Panel basierend auf dem neuen Dokument
+              // Dieser Aufruf passiert jetzt korrekterweise im PropertyChangeListener der View
+              // refreshInvoiceTypePanelForCurrentSelection(); // Nicht mehr hier direkt aufrufen
           }
      }
  }
@@ -182,6 +202,7 @@ public class AppController {
  private void handleTabelleComboBoxAuswahl(ActionEvent e) {
      if ("comboBoxChanged".equals(e.getActionCommand()) && view != null) {
          ExtrahierteTabelle selectedTable = (ExtrahierteTabelle) view.getTabelleComboBox().getSelectedItem();
+         // Aktualisiere das Modell nur, wenn eine Tabelle ausgewählt ist und sie sich unterscheidet
          if (selectedTable != null && !Objects.equals(model.getAusgewaehlteTabelle(), selectedTable)) {
               log.info("Tabellen ComboBox Auswahl geändert zu: {}", selectedTable);
               model.setAusgewaehlteTabelle(selectedTable); // Löst Event für Tabellenanzeige aus
@@ -195,41 +216,45 @@ public class AppController {
           String selectedFlavor = (String) view.getFlavorComboBox().getSelectedItem();
           log.info("Flavor manuell geändert auf: {}", selectedFlavor);
           view.logMessage("Flavor auf '" + selectedFlavor + "' geändert. Klicken Sie 'Neu verarbeiten'.");
+          // KEIN triggerReprocessing() HIER
      }
  }
  /** Behandelt Änderung des Row Tolerance-Parameters (ohne Neuverarbeitung). */
  private void handleRowTolChange(ChangeEvent e) {
-     if (view != null && e.getSource() == view.getRowToleranceSpinner()) {
+     if (view != null && e.getSource() == view.getRowToleranceSpinner()) { // Nur auf Spinner reagieren
           Object value = view.getRowToleranceSpinner().getValue();
           log.info("Row Tolerance manuell geändert auf: {}", value);
           view.logMessage("Row Tolerance auf '" + value + "' geändert. Klicken Sie 'Neu verarbeiten'.");
+           // KEIN triggerReprocessing() HIER
      }
  }
 
  /** Öffnet den Konfigurationseditor-Dialog für Bereichsdefinitionen. */
  private void handleOpenConfigEditor(ActionEvent e) {
       log.info("Öffne Bereichs-Konfigurationseditor (Menü)...");
-      if (view == null) { log.error("View ist null..."); return; }
+      if (view == null) { log.error("View ist null in handleOpenConfigEditor"); return; }
       ExtractionConfiguration configToEdit = model.getAktiveKonfiguration(); ExtractionConfiguration configForDialog;
+      // Lade eine frische Kopie der Konfiguration, um Änderungen zu isolieren
       if (configToEdit != null) { configForDialog = model.getConfigurationService().loadConfiguration(configToEdit.getName()); if (configForDialog == null) { log.warn("Konnte Konfig '{}' nicht laden.", configToEdit.getName()); configForDialog = new ExtractionConfiguration("Neue Konfiguration"); } }
       else { configForDialog = new ExtractionConfiguration("Neue Konfiguration"); }
       ConfigurationDialog dialog = new ConfigurationDialog(view, model.getConfigurationService(), configForDialog);
-      dialog.setVisible(true);
+      dialog.setVisible(true); // Zeigt Dialog modal
       ExtractionConfiguration savedConfig = dialog.getSavedConfiguration();
       if (savedConfig != null) {
-          log.info("Bereichs-Konfiguration '{}' gespeichert.", savedConfig.getName());
+          log.info("Bereichs-Konfiguration '{}' wurde gespeichert.", savedConfig.getName());
           updateAvailableConfigsInView(); // Liste neu laden
-          model.setAktiveKonfiguration(savedConfig); // Als aktiv setzen
+          model.setAktiveKonfiguration(savedConfig); // Als aktiv setzen (löst Event in View)
           view.logMessage("Konfiguration '" + savedConfig.getName() + "' gespeichert/aktiviert. Ggf. 'Neu verarbeiten'.");
       } else { log.info("Bereichs-Konfigurationsdialog geschlossen ohne Speichern."); updateAvailableConfigsInView();}
  }
 
   /** Behandelt Änderung in der Bereichs-Konfigurations-ComboBox (ohne Neuverarbeitung). */
   private void handleConfigSelectionChange(ItemEvent e) {
-     if (e.getStateChange() == ItemEvent.SELECTED) {
+     if (e.getStateChange() == ItemEvent.SELECTED) { // Nur auf Auswahl reagieren
          Object selectedItem = e.getItem(); ExtractionConfiguration selectedConfig = null;
          if (selectedItem instanceof ExtractionConfiguration) { selectedConfig = (ExtractionConfiguration) selectedItem; }
          else if (!"Keine".equals(selectedItem)) { log.warn("Unerwartetes Item: {}", selectedItem); return; }
+
          log.info("Bereichs-Konfig Auswahl geändert zu: {}", (selectedConfig != null ? selectedConfig.getName() : "Keine"));
          if (!Objects.equals(model.getAktiveKonfiguration(), selectedConfig)) {
               model.setAktiveKonfiguration(selectedConfig); // Löst Event für GUI Combo Update aus
@@ -247,46 +272,46 @@ public class AppController {
      triggerReprocessing("Refresh Button"); // Nur hier wird neu verarbeitet
  }
 
- /** Behandelt den Klick auf den "Akt. Parameter für Typ speichern"-Button. */
+ /** Behandelt den Klick auf den "Params für Typ speichern"-Button. */
  private void handleUpdateCsvAction(ActionEvent e) {
      log.info("Update CSV Button geklickt.");
      if (view == null) { log.error("View ist null in handleUpdateCsvAction"); return; }
 
-     // --- KORREKTUR: Keyword direkt aus dem GUI-Feld lesen ---
-     // Hole den aktuell im Panel angezeigten Keyword-String.
-     String keyword = view.getTxtDetectedKeyword().getText(); // Annahme: Getter existiert in MainFrame
+     // Hole den zuletzt erkannten Rechnungstyp direkt aus der Controller-Variable
+     InvoiceTypeConfig configToUpdate = this.lastDetectedInvoiceType;
 
-     // Prüfe, ob ein spezifischer Typ angezeigt wird (nicht "-" oder "Others")
-     if (keyword == null || keyword.isBlank() || "-".equals(keyword) || InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(keyword)) {
-         log.warn("Kein spezifischer Rechnungstyp im Panel angezeigt ('{}'). Update nicht möglich.", keyword);
-         JOptionPane.showMessageDialog(view, "Es muss ein spezifischer Rechnungstyp (nicht 'Others') erkannt und angezeigt sein,\num dessen Standardwerte in der CSV zu aktualisieren.", "Aktion nicht möglich", JOptionPane.WARNING_MESSAGE);
+     // Prüfe, ob ein spezifischer Typ zum Aktualisieren vorhanden ist
+     if (configToUpdate == null || DEFAULT_INVOICE_KEYWORD.equalsIgnoreCase(configToUpdate.getIdentifyingKeyword())) { // Prüfe gegen primäres Keyword
+         log.warn("Kein spezifischer Rechnungstyp zum Aktualisieren ausgewählt oder 'Others' ausgewählt. Aktuell zwischengespeichert: {}", this.lastDetectedInvoiceType);
+         JOptionPane.showMessageDialog(view, "Es muss ein spezifischer Rechnungstyp (nicht 'Others') erkannt sein,\num dessen Standardwerte in der CSV zu aktualisieren.", "Aktion nicht möglich", JOptionPane.WARNING_MESSAGE);
          return;
      }
-     // --- Ende Korrektur ---
+     // Verwende das primäre identifizierende Keyword zum Aktualisieren der CSV
+     String keyword = configToUpdate.getIdentifyingKeyword();
 
-     // Hole die NEUEN Werte aus den oberen GUI-Elementen (unverändert)
-     Map<String, String> params = getCurrentParametersFromGui();
+     // Hole die NEUEN Werte aus den oberen GUI-Elementen
+     Map<String, String> params = getCurrentParametersFromGui(); // Holt Flavor und RowTol
      String newFlavor = params.get("flavor");
      String newRowTol = params.get("row_tol");
 
      Object selectedConfigItem = view.getConfigComboBox().getSelectedItem();
-     String newAreaType = "Keine"; // Default
+     String newAreaType = InvoiceTypeConfig.USE_MANUAL_CONFIG; // Default: Marker für "Manuell/Keine"
      if (selectedConfigItem instanceof ExtractionConfiguration) {
-         newAreaType = ((ExtractionConfiguration) selectedConfigItem).getName();
-     } else if (selectedConfigItem != null && !"Keine".equals(selectedConfigItem.toString())) {
-          log.warn("Unerwarteter Typ in Bereichs-Konfig ComboBox: {}", selectedConfigItem);
-          // Hole alten Wert als Fallback? Sicherer ist Default "Keine".
-          // InvoiceTypeConfig oldConf = model.getInvoiceTypeService().findConfigByKeyword(keyword); // Braucht neue Service-Methode
-          // if (oldConf != null) newAreaType = oldConf.getAreaType();
-          newAreaType = "Keine"; // Fallback
+         newAreaType = ((ExtractionConfiguration) selectedConfigItem).getName(); // Nimm Namen der Konfig
+     } else if ("Keine".equals(selectedConfigItem)) {
+         newAreaType = "Keine"; // Speichere "Keine" explizit
+          log.info("Bereichs-Konfiguration 'Keine' wird für CSV-Update verwendet.");
+     } else {
+          log.warn("Unerwarteter Typ in Bereichs-Konfig ComboBox beim Speichern: {}", selectedConfigItem);
+          newAreaType = configToUpdate.getAreaType(); // Behalte alten Wert als Fallback
      }
      log.debug("Werte für CSV-Update: Keyword='{}', AreaType='{}', Flavor='{}', RowTol='{}'",
                keyword, newAreaType, newFlavor, newRowTol);
 
-     // Rufe Service auf, um CSV zu aktualisieren (unverändert)
+     // Rufe Service auf, um CSV zu aktualisieren
      boolean success = model.getInvoiceTypeService().updateConfigInCsv(keyword, newAreaType, newFlavor, newRowTol);
 
-     // Gib Feedback und aktualisiere Anzeige (unverändert)
+     // Gib Feedback und aktualisiere Anzeige
      if (success) {
          log.info("CSV-Datei erfolgreich aktualisiert für Keyword '{}'.", keyword);
          JOptionPane.showMessageDialog(view, "Standardwerte für Rechnungstyp '" + keyword + "'\nin der CSV-Datei aktualisiert.", "Update erfolgreich", JOptionPane.INFORMATION_MESSAGE);
@@ -298,23 +323,46 @@ public class AppController {
      }
  }
 
+
  // --- Hilfsmethoden ---
 
- /** Löst Neuverarbeitung des aktuellen PDFs aus. */
+ /**
+  * Löst die Neuverarbeitung des aktuell ausgewählten PDFs aus.
+  * Ermittelt Parameter aus GUI und die passende Bereichs-Konfig (basierend auf der *aktuellen* Auswahl).
+  * @param grund Grund für die Neuverarbeitung (für Logging).
+  */
  private void triggerReprocessing(String grund) {
-      if (view == null) { log.error("View ist null..."); return; }
+      if (view == null) { log.error("View ist null in triggerReprocessing"); return; }
       PdfDokument selectedDoc = model.getAusgewaehltesDokument();
       if (selectedDoc != null && selectedDoc.getFullPath() != null && !selectedDoc.getFullPath().isBlank()) {
-          Path pdfPath = null; try { pdfPath = Paths.get(selectedDoc.getFullPath()); } catch (Exception pathEx) { log.error("Ungültiger Pfad: {}", selectedDoc.getFullPath(), pathEx); view.logMessage("Fehler: Ungültiger Pfad."); return; }
+          Path pdfPath = null;
+          try { pdfPath = Paths.get(selectedDoc.getFullPath()); }
+          catch (Exception pathEx) { log.error("Ungültiger Pfad: {}", selectedDoc.getFullPath(), pathEx); view.logMessage("Fehler: Ungültiger Pfad."); return; }
+
           if (pdfPath != null) {
               Map<String, String> aktuelleParameterGui = getCurrentParametersFromGui();
+              // Hole die explizit VOM USER ausgewählte Bereichs-Konfig (kann null sein)
               ExtractionConfiguration aktiveBereichsKonfig = model.getAktiveKonfiguration();
+              // Hole den zuletzt erkannten Rechnungstyp nur für Logging
               InvoiceTypeConfig typConfig = selectedDoc.getDetectedInvoiceType() != null ? selectedDoc.getDetectedInvoiceType() : model.getInvoiceTypeService().getDefaultConfig();
-              log.info("({}) Starte Neuverarbeitung: PDF={}, GUIParams={}, InvType={}, BereichsKonfig={}", grund, selectedDoc.getSourcePdf(), aktuelleParameterGui, typConfig.getKeyword(), (aktiveBereichsKonfig != null ? aktiveBereichsKonfig.getName() : "Keine"));
-              view.logMessage("Verarbeite '" + selectedDoc.getSourcePdf() + "' neu..."); view.setProgressBarVisible(true); view.setProgressBarValue(0);
-              model.ladeUndVerarbeitePdfsMitKonfiguration( Collections.singletonList(pdfPath), aktuelleParameterGui, aktiveBereichsKonfig,
-                  processedDoc -> { /* Status */ if(processedDoc!=null) SwingUtilities.invokeLater(()->view.logMessage("Neu verarbeitet:"+processedDoc.getSourcePdf()+(processedDoc.getError()!=null?" [FEHLER]":"")));},
-                  progress -> { /* Progress */ SwingUtilities.invokeLater(()->{view.setProgressBarValue((int)(progress*100)); if(progress>=1.0){ Timer t=new Timer(2000,ae->view.setProgressBarVisible(false)); t.setRepeats(false);t.start();}}); }
+
+              log.info("({}) Starte Neuverarbeitung für PDF: {} mit GUI-Parametern: {}, InvoiceType: {}, Aktive Bereichs-Konfig: {}",
+                       grund, selectedDoc.getSourcePdf(), aktuelleParameterGui, typConfig.getIdentifyingKeyword(), (aktiveBereichsKonfig != null ? aktiveBereichsKonfig.getName() : "Keine"));
+              view.logMessage("Verarbeite '" + selectedDoc.getSourcePdf() + "' neu...");
+              view.setProgressBarVisible(true); view.setProgressBarValue(0);
+
+              // Rufe Modell auf und übergib die explizit ausgewählte Bereichs-Konfiguration
+              model.ladeUndVerarbeitePdfsMitKonfiguration(
+                  Collections.singletonList(pdfPath),
+                  aktuelleParameterGui,
+                  aktiveBereichsKonfig, // Übergib die aktuell ausgewählte (oder null)
+                  processedDoc -> { // Status Callback
+                      if(processedDoc!=null) SwingUtilities.invokeLater(()->view.logMessage("Neu verarbeitet:"+processedDoc.getSourcePdf()+(processedDoc.getError()!=null?" [FEHLER]":"")));
+                      else log.warn("Callback nach Neuverarbeitung: Dokument ist null.");
+                      },
+                  progress -> { // Progress Callback
+                      SwingUtilities.invokeLater(()->{view.setProgressBarValue((int)(progress*100)); if(progress>=1.0){ Timer t=new Timer(2000,ae->view.setProgressBarVisible(false)); t.setRepeats(false);t.start();}});
+                      }
               );
           }
       } else { log.debug("Kein PDF ausgewählt für Neuverarbeitung."); view.logMessage("Bitte zuerst ein PDF auswählen."); }
@@ -324,99 +372,52 @@ public class AppController {
  private Map<String, String> getCurrentParametersFromGui() {
       if (view == null) return Collections.emptyMap();
       Map<String,String> p = new HashMap<>();
-      try { p.put("flavor", (String)view.getFlavorComboBox().getSelectedItem()); Object v=view.getRowToleranceSpinner().getValue(); p.put("row_tol", String.valueOf(v instanceof Number ? ((Number)v).intValue() : "2")); }
-      catch (Exception e) { log.error("Fehler GUI-Parameter Lesen", e); p.putIfAbsent("flavor", "lattice"); p.putIfAbsent("row_tol", "2"); }
+      try {
+          p.put("flavor", (String)view.getFlavorComboBox().getSelectedItem());
+          Object v=view.getRowToleranceSpinner().getValue();
+          p.put("row_tol", String.valueOf(v instanceof Number ? ((Number)v).intValue() : "2"));
+      } catch (Exception e) { log.error("Fehler GUI-Parameter Lesen", e); p.putIfAbsent("flavor", "lattice"); p.putIfAbsent("row_tol", "2"); }
       return p;
  }
 
   /** Lädt verfügbare Bereichs-Konfigurationen und aktualisiert die View. */
   private void updateAvailableConfigsInView() {
-      if (view == null) { log.error("View ist null..."); return; }
-      log.debug("Aktualisiere Bereichs-Konfigurations-ComboBox...");
+      if (view == null) { log.error("View ist null in updateAvailableConfigsInView"); return; }
+      log.debug("Aktualisiere Bereichs-Konfigurations-ComboBox in der View...");
       List<ExtractionConfiguration> configs = model.getConfigurationService().loadAllConfigurations();
       ExtractionConfiguration activeConfig = model.getAktiveKonfiguration();
       view.updateConfigurationComboBox(configs, activeConfig);
   }
 
-  /** Aktualisiert das Invoice Type Panel (startet Hintergrundsuche). */
+  /**
+   * Aktualisiert das Invoice Type Panel in der GUI basierend auf dem Typ,
+   * der im ausgewählten PdfDokument-Objekt gespeichert ist. Startet keine neue Suche mehr.
+   */
   public void refreshInvoiceTypePanelForCurrentSelection() {
-      if (view == null) { log.error("View ist null..."); return; }
-      this.lastDetectedInvoiceType = null; view.updateInvoiceTypeDisplay(null); view.setRefreshButtonEnabled(false);
-      PdfDokument pdfDoc = model.getAusgewaehltesDokument();
-      if (pdfDoc == null || pdfDoc.getFullPath() == null || pdfDoc.getFullPath().isBlank()) { log.debug("Kein gültiges Dokument für Keyword-Suche."); return; }
-      final Path pdfPath;
-      try { pdfPath = Paths.get(pdfDoc.getFullPath()); if (!Files.exists(pdfPath)) { log.error("PDF nicht gefunden: {}", pdfPath); view.logMessage("Fehler: PDF für Typ nicht gefunden."); return; } }
-      catch (Exception e) { log.error("Ungültiger PDF-Pfad: {}", pdfDoc.getFullPath(), e); view.logMessage("Fehler: Ungültiger PDF-Pfad."); return; }
+      if (view == null) { log.error("View ist null in refreshInvoiceTypePanelForCurrentSelection"); return; }
+      PdfDokument selectedDoc = model.getAusgewaehltesDokument();
+      log.debug("Aktualisiere InvoiceTypePanel für: {}", (selectedDoc != null ? selectedDoc.getSourcePdf() : "null"));
 
-      // Prüfe, ob Typ schon im Objekt ist
-      InvoiceTypeConfig detectedType = pdfDoc.getDetectedInvoiceType();
-      if(detectedType != null){
-           log.info("Verwende bereits erkannten Rechnungstyp: {}", detectedType.getType());
-           this.lastDetectedInvoiceType = detectedType;
-           view.updateInvoiceTypeDisplay(detectedType);
-           view.setRefreshButtonEnabled(true);
-           return; // Keine neue Suche nötig
+      InvoiceTypeConfig configToShow = null;
+      if (selectedDoc != null) {
+          // Hole den Typ direkt aus dem Dokumentobjekt (wurde bei der Verarbeitung gesetzt)
+          configToShow = selectedDoc.getDetectedInvoiceType();
+          if(configToShow == null){
+               log.warn("DetectedInvoiceType im ausgewählten Dokument ist null! Verwende Default.");
+               // Hole Default Config aus dem Service, falls im Dokument nichts steht
+               configToShow = model.getInvoiceTypeService().getDefaultConfig();
+          }
+          // Speichere den (potentiell Default) Typ für den Update-CSV-Button
+          this.lastDetectedInvoiceType = configToShow;
+      } else {
+           log.debug("Kein Dokument ausgewählt, leere Invoice Panel.");
+           this.lastDetectedInvoiceType = null; // Reset
       }
 
-      // Typ noch nicht bekannt -> Starte Suche im Hintergrund
-      view.logMessage("Ermittle Rechnungstyp..."); view.setRefreshButtonEnabled(false);
-      SwingWorker<InvoiceTypeConfig, Void> worker = new SwingWorker<>() {
-    	  @Override protected InvoiceTypeConfig doInBackground() throws Exception {
-    		  log.debug("BG> Starte Keyword-Suche für {}", pdfDoc.getSourcePdf()); PDDocument pdDoc = null; InvoiceTypeConfig result = null;
-//    		  pdDoc = null;
-//    		  result = null;
-    		  try { 
-    			  pdDoc = PDDocument.load(pdfPath.toFile()); 
-    			  log.trace("BG> PDDocument geladen."); 
-    			  result = model.getInvoiceTypeService().findConfigForPdf(pdDoc); 
-    			  log.debug("BG> Keyword-Suche Ergebnis: {}", result); 
-    		  }catch(IOException ioEx){
-    			  log.error("BG> IO Fehler Laden/Suchen: {}", ioEx.getMessage()); throw ioEx;
-    		  }catch(Exception ex){
-    			  log.error("BG> Unerwarteter Fehler in doInBackground", ex); 
-    			  throw ex;
-    		  } catch (Throwable t) { // Fange ALLES ab
-                  log.error("BG> Kritischer Fehler in doInBackground für {}: {}", pdfDoc.getSourcePdf(), t.getMessage(), t);
-                  throw t; // Wirf weiter
-    		  }finally { 
-    			  if (pdDoc != null) { 
-    				  try { 
-    					  pdDoc.close(); 
-    					  log.trace("BG> PDDocument geschlossen.");
-    				  } catch (IOException e) { 
-    					  log.error("BG> Fehler Schließen Doc", e);
-    				  } 
-    			  }
-    			  log.info("BG> doInBackground BEENDET für {}", pdfDoc.getSourcePdf());
-    		  }
-    		  return result; // Gib Ergebnis oder null zurück
-    	  }
-    	// In AppController.java -> refreshInvoiceTypePanelForCurrentSelection -> SwingWorker -> done()
-          @Override protected void done() {
-              InvoiceTypeConfig foundConfig = null;
-              boolean executionOk = true;
-              try {
-                  foundConfig = get();
-                  // *** WICHTIG: Erst hier den Typ setzen ***
-                  lastDetectedInvoiceType = foundConfig;
-                  log.info("EDT> Keyword-Suche fertig. Typ: {}", (foundConfig != null ? foundConfig.getType() : "Default/Fehler"));
-              } catch (InterruptedException e) { /*...*/ executionOk=false; lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig();}
-                catch (java.util.concurrent.ExecutionException e) { /*...*/ executionOk=false; lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig();}
-                catch (Exception e) { /*...*/ executionOk=false; lastDetectedInvoiceType = model.getInvoiceTypeService().getDefaultConfig();}
-              finally {
-                  log.info("EDT> Rufe view.updateInvoiceTypeDisplay auf mit: {}", lastDetectedInvoiceType);
-                  view.updateInvoiceTypeDisplay(lastDetectedInvoiceType); // GUI aktualisieren
-
-                  // *** NEU: Update-Button Status hier setzen ***
-                  boolean enableUpdate = (lastDetectedInvoiceType != null && !InvoiceTypeService.DEFAULT_KEYWORD.equalsIgnoreCase(lastDetectedInvoiceType.getKeyword()));
-                  view.setUpdateCsvButtonEnabled(enableUpdate);
-                  // --- Ende NEU ---
-
-                  view.setRefreshButtonEnabled(model.getAusgewaehltesDokument() != null);
-                  if(executionOk) view.logMessage("Bereit."); // Status nur bei Erfolg zurücksetzen
-              }
-          }
-      };
-      worker.execute();
+      // Rufe View-Update auf
+      view.updateInvoiceTypeDisplay(configToShow);
+      // Setze Refresh-Button Status
+      view.setRefreshButtonEnabled(selectedDoc != null);
+      // Update-CSV-Button wird in updateInvoiceTypeDisplay (de)aktiviert
   }
 }

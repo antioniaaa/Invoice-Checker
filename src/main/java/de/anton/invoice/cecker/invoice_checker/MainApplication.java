@@ -24,32 +24,21 @@ public class MainApplication {
             log.warn("System Look and Feel konnte nicht gesetzt werden. Verwende Standard.", e);
         }
 
-        // GUI Erstellung im EDT
         SwingUtilities.invokeLater(() -> {
             log.info("Initialisiere Anwendung im EDT...");
-
-            // 1. Modell erstellen
             AnwendungsModell model = new AnwendungsModell();
             log.debug("Modell erstellt.");
 
-            // 2. Controller erstellen (braucht nur Modell)
-            // *** KORREKTUR: Nur das Modell übergeben ***
-            AppController controller = new AppController(model);
-            log.debug("Controller erstellt.");
-
-            // 3. View erstellen (braucht nur Modell)
-            // *** KORREKTUR: Konstruktor OHNE Controller aufrufen ***
+            // *** KORREKTUR: Reihenfolge und Konstruktor-Aufrufe ***
+            // 1. View erstellen (braucht nur Modell)
             MainFrame view = new MainFrame(model);
             log.debug("View (MainFrame) erstellt.");
 
-            // 4. Listener im Controller initialisieren und View-Referenz setzen
-            //    Der Controller kennt jetzt das Modell, die View wird hier übergeben.
-            // *** KORREKTUR: Diese Methode ruft der Controller intern auf,
-            //     wenn die View übergeben wird. ***
-            controller.setViewAndInitializeListeners(view); // Übergib die View an den Controller
-            log.debug("Controller Listener initialisiert.");
+            // 2. Controller erstellen (braucht Modell UND View)
+            AppController controller = new AppController(model, view); // Übergib Model und View
+            log.debug("Controller erstellt und Listener initialisiert.");
 
-            // 5. Hauptfenster (View) sichtbar machen
+            // 3. View sichtbar machen
             view.setVisible(true);
             log.info("Anwendung gestartet und Hauptfenster ist sichtbar.");
         });

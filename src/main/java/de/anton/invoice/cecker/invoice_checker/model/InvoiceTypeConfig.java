@@ -3,65 +3,85 @@ package de.anton.invoice.cecker.invoice_checker.model;
 import java.util.Objects;
 
 /**
- * Repräsentiert eine Zeile aus der invoice-config.csv.
+ * Repräsentiert eine Zeile aus der erweiterten invoice-config.csv.
  */
 public class InvoiceTypeConfig {
-    private String keyword;
-    private String keywordAlternate;
+    // Konstanten für Default-Werte oder Marker
+    public static final String USE_MANUAL_CONFIG = "Konfig*"; // Marker für manuelle Bereichs-Konfig
+    public static final String USE_MANUAL_FLAVOR = "Flavor*"; // Marker für manuellen Flavor
+    public static final String USE_MANUAL_ROW_TOL = "Row Tol*"; // Marker für manuelle Row Tol
+
+    // Felder entsprechend CSV-Spalten
     private String type;
-    private String areaType; // "Konfig" oder "Konfig*" (für Default/Fallback?)
+    private String keywordIncl1;
+    private String keywordIncl2;
+    private String keywordIncl3;
+    private String keywordExcl1;
+    private String keywordExcl2;
+    private String areaType; // Name der Bereichs-Konfig oder Marker
     private String defaultFlavor;
-    private String defaultRowTol; // Als String speichern, Konvertierung später
+    private String defaultRowTol;
 
-    // Getters (Setter sind optional, da wir primär lesen)
-    public String getKeyword() { return keyword; }
-    public String getKeywordAlternate() { return keywordAlternate; }
-    public String getType() { return type; }
-    public String getAreaType() { return areaType; }
-    public String getDefaultFlavor() { return defaultFlavor; }
-    public String getDefaultRowTol() { return defaultRowTol; }
+    // --- Getter ---
+    public String getType() { return type != null ? type : ""; }
+    public String getKeywordIncl1() { return keywordIncl1 != null ? keywordIncl1 : ""; }
+    public String getKeywordIncl2() { return keywordIncl2 != null ? keywordIncl2 : ""; }
+    public String getKeywordIncl3() { return keywordIncl3 != null ? keywordIncl3 : ""; }
+    public String getKeywordExcl1() { return keywordExcl1 != null ? keywordExcl1 : ""; }
+    public String getKeywordExcl2() { return keywordExcl2 != null ? keywordExcl2 : ""; }
+    public String getAreaType() { return areaType != null ? areaType : ""; }
+    public String getDefaultFlavor() { return defaultFlavor != null ? defaultFlavor : "lattice"; }
+    public String getDefaultRowTol() { return defaultRowTol != null ? defaultRowTol : "2"; }
 
-    // Konstruktor zum einfachen Erstellen
-    public InvoiceTypeConfig(String keyword, String keywordAlternate, String type, String areaType, String defaultFlavor, String defaultRowTol) {
-        this.keyword = keyword != null ? keyword.trim() : "";
-        this.keywordAlternate = keywordAlternate != null ? keywordAlternate.trim() : "";
-        this.type = type != null ? type.trim() : "";
-        this.areaType = areaType != null ? areaType.trim() : "";
-        this.defaultFlavor = defaultFlavor != null ? defaultFlavor.trim() : "lattice"; // Default setzen
-        this.defaultRowTol = defaultRowTol != null ? defaultRowTol.trim() : "2"; // Default setzen
-    }
-
- // --- NEUE Setter ---
-    public void setKeyword(String keyword) { this.keyword = keyword != null ? keyword.trim() : ""; }
-    public void setKeywordAlternate(String keywordAlternate) { this.keywordAlternate = keywordAlternate != null ? keywordAlternate.trim() : ""; }
+    // --- Setter ---
     public void setType(String type) { this.type = type != null ? type.trim() : ""; }
+    public void setKeywordIncl1(String keywordIncl1) { this.keywordIncl1 = keywordIncl1 != null ? keywordIncl1.trim() : ""; }
+    public void setKeywordIncl2(String keywordIncl2) { this.keywordIncl2 = keywordIncl2 != null ? keywordIncl2.trim() : ""; }
+    public void setKeywordIncl3(String keywordIncl3) { this.keywordIncl3 = keywordIncl3 != null ? keywordIncl3.trim() : ""; }
+    public void setKeywordExcl1(String keywordExcl1) { this.keywordExcl1 = keywordExcl1 != null ? keywordExcl1.trim() : ""; }
+    public void setKeywordExcl2(String keywordExcl2) { this.keywordExcl2 = keywordExcl2 != null ? keywordExcl2.trim() : ""; }
     public void setAreaType(String areaType) { this.areaType = areaType != null ? areaType.trim() : ""; }
     public void setDefaultFlavor(String defaultFlavor) { this.defaultFlavor = (defaultFlavor != null && !defaultFlavor.isBlank()) ? defaultFlavor.trim() : "lattice"; }
     public void setDefaultRowTol(String defaultRowTol) { this.defaultRowTol = (defaultRowTol != null && !defaultRowTol.isBlank()) ? defaultRowTol.trim() : "2"; }
-    
-    // toString für Debugging
-    @Override
-    public String toString() {
-        return "InvoiceTypeConfig{" +
-               "keyword='" + keyword + '\'' +
-               ", type='" + type + '\'' +
-               ", areaType='" + areaType + '\'' +
-               ", flavor='" + defaultFlavor + '\'' +
-               ", rowTol='" + defaultRowTol + '\'' +
-               '}';
+
+    /**
+     * Konstruktor für die erweiterte Struktur.
+     */
+    public InvoiceTypeConfig(String type, String keywordIncl1, String keywordIncl2, String keywordIncl3,
+                             String keywordExcl1, String keywordExcl2, String areaType,
+                             String defaultFlavor, String defaultRowTol) {
+        setType(type);
+        setKeywordIncl1(keywordIncl1);
+        setKeywordIncl2(keywordIncl2);
+        setKeywordIncl3(keywordIncl3);
+        setKeywordExcl1(keywordExcl1);
+        setKeywordExcl2(keywordExcl2);
+        setAreaType(areaType);
+        setDefaultFlavor(defaultFlavor);
+        setDefaultRowTol(defaultRowTol);
     }
 
-    // equals/hashCode basierend auf Keyword (als primärer Identifikator)
+    /** Gibt das primäre Keyword zurück (für Identifikation). */
+    public String getIdentifyingKeyword() {
+        return getKeywordIncl1(); // Annahme: Erstes Include-Keyword ist der primäre Identifier
+    }
+
+    @Override
+    public String toString() {
+        return "InvoiceTypeConfig{keyword='" + getIdentifyingKeyword() + "', type='" + type + "'}";
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         InvoiceTypeConfig that = (InvoiceTypeConfig) o;
-        return Objects.equals(keyword, that.keyword);
+        // Gleichheit basiert auf dem primären Keyword
+        return Objects.equals(getIdentifyingKeyword(), that.getIdentifyingKeyword());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(keyword);
+        return Objects.hash(getIdentifyingKeyword());
     }
 }

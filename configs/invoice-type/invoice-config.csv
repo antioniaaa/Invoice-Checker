@@ -1,9 +1,8 @@
-Keyword; Keyword-Alternate; Type;Area-Type; Flavor, Row Tol
-E.DIS;;Netzbetreiber;EDis_small;lattice;2
-Avacon;;Netzbetreiber; Konfig*; Flavor*; Row Tol*
-WEMAG;;Netzbetreiber; Konfig*; Flavor*; Row Tol*
-Interconnector;;Direktvermarkter; Konfig*; Flavor*; Row Tol*
-Next;;Direktvermarkter; Konfig*; Flavor*; Row Tol*
-Quadra;;Direktvermarkter; Konfig*; Flavor*; Row Tol*
-Others;; Others; Konfig*; Flavor*; Row Tol*
-
+Type; Keyword_incl_1; Keyword_incl_2; Keyword_incl_3; Keyword_excl_1; Keyword_excl_2; Area-Type; Flavor; Row Tol
+Netzbetreiber; E.DIS;Marktprämie;;Messstelle;; EDis_small;lattice;2
+Netzbetreiber; Avacon;Marktprämie;;Messstelle;; Konfig*; Flavor*; Row Tol*
+Netzbetreiber; WEMAG;Marktprämie;;;; Konfig*; Flavor*; Row Tol*
+Direktvermarkter; Interconnector;;;;; Konfig*; Flavor*; Row Tol*
+Direktvermarkter; Next;;;;; Konfig*; Flavor*; Row Tol*
+Direktvermarkter; Quadra;;;;; Konfig*; Flavor*; Row Tol*
+Others; Others;;;;; Konfig*; Flavor*; Row Tol*
