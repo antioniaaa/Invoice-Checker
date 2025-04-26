@@ -1,4 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.view;
+package de.anton.invoice.checker.invoice_checker.view;
 
 import javax.swing.*;
 import javax.swing.event.TableModelEvent;

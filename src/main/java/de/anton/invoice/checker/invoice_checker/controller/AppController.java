@@ -1,19 +1,19 @@
-package de.anton.invoice.cecker.invoice_checker.controller;
+package de.anton.invoice.checker.invoice_checker.controller;
 
-
-import de.anton.invoice.cecker.invoice_checker.model.AnwendungsModell;
-import de.anton.invoice.cecker.invoice_checker.model.ExtrahierteTabelle;
-import de.anton.invoice.cecker.invoice_checker.model.InvoiceTypeConfig;
-import de.anton.invoice.cecker.invoice_checker.model.InvoiceTypeService;
-import de.anton.invoice.cecker.invoice_checker.model.PdfDokument;
-import de.anton.invoice.cecker.invoice_checker.view.MainFrame;
-import de.anton.invoice.cecker.invoice_checker.model.ExtractionConfiguration;
-import de.anton.invoice.cecker.invoice_checker.view.ConfigurationDialog; // Import für Dialog
-import de.anton.invoice.cecker.invoice_checker.view.InvoiceTypeCrudPanel;
 
 //Logging
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import de.anton.invoice.checker.invoice_checker.model.AnwendungsModell;
+import de.anton.invoice.checker.invoice_checker.model.ExtractionConfiguration;
+import de.anton.invoice.checker.invoice_checker.model.ExtrahierteTabelle;
+import de.anton.invoice.checker.invoice_checker.model.InvoiceTypeConfig;
+import de.anton.invoice.checker.invoice_checker.model.InvoiceTypeService;
+import de.anton.invoice.checker.invoice_checker.model.PdfDokument;
+import de.anton.invoice.checker.invoice_checker.view.ConfigurationDialog;
+import de.anton.invoice.checker.invoice_checker.view.InvoiceTypeCrudPanel;
+import de.anton.invoice.checker.invoice_checker.view.MainFrame;
 
 //Swing-Komponenten und Event-Handling
 import javax.swing.*;

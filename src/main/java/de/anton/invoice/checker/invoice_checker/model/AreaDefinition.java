@@ -1,4 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.model;
+package de.anton.invoice.checker.invoice_checker.model;
 
 import java.awt.geom.Rectangle2D;
 import java.io.Serializable; // Für Speicherung

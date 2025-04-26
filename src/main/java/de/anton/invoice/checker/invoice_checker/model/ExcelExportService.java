@@ -1,4 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.model;
+package de.anton.invoice.checker.invoice_checker.model;
 
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook; // Für .xlsx Format

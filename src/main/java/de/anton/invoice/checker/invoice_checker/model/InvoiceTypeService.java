@@ -1,4 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.model;
+package de.anton.invoice.checker.invoice_checker.model;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper; // Für Textextraktion

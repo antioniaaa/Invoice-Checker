@@ -88,7 +88,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>de.anton.invoice.cecker.invoice_checker.MainApplication</mainClass>
+                            <mainClass>de.anton.invoice.checker.invoice_checker.MainApplication</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>

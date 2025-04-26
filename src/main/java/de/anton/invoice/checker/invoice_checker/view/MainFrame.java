@@ -1,10 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.view;
-
-import de.anton.invoice.cecker.invoice_checker.model.AnwendungsModell;
-import de.anton.invoice.cecker.invoice_checker.model.ExtractionConfiguration;
-import de.anton.invoice.cecker.invoice_checker.model.ExtrahierteTabelle;
-import de.anton.invoice.cecker.invoice_checker.model.InvoiceTypeConfig;
-import de.anton.invoice.cecker.invoice_checker.model.PdfDokument;
+package de.anton.invoice.checker.invoice_checker.view;
 
 //Benötigte Swing und AWT Klassen
 import javax.swing.*;
@@ -26,6 +20,11 @@ import java.beans.PropertyChangeListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import de.anton.invoice.checker.invoice_checker.model.AnwendungsModell;
+import de.anton.invoice.checker.invoice_checker.model.ExtractionConfiguration;
+import de.anton.invoice.checker.invoice_checker.model.ExtrahierteTabelle;
+import de.anton.invoice.checker.invoice_checker.model.InvoiceTypeConfig;
+import de.anton.invoice.checker.invoice_checker.model.PdfDokument;
 
 //Hilfsklassen und Java Util
 import java.util.Comparator; // Für Sortierung

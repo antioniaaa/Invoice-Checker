@@ -1,4 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.model;
+package de.anton.invoice.checker.invoice_checker.model;
 
 // Jackson Imports für JSON-Verarbeitung und Fehlerbehandlung
 import com.fasterxml.jackson.core.JsonParseException;

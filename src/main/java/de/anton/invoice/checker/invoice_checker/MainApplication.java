@@ -1,12 +1,12 @@
-package de.anton.invoice.cecker.invoice_checker;
+package de.anton.invoice.checker.invoice_checker;
 
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import de.anton.invoice.cecker.invoice_checker.controller.AppController;
-import de.anton.invoice.cecker.invoice_checker.model.AnwendungsModell;
-import de.anton.invoice.cecker.invoice_checker.view.MainFrame;
+import de.anton.invoice.checker.invoice_checker.controller.AppController;
+import de.anton.invoice.checker.invoice_checker.model.AnwendungsModell;
+import de.anton.invoice.checker.invoice_checker.view.MainFrame;
 
 import javax.swing.*;
 

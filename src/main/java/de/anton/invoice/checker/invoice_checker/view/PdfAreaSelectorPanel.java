@@ -1,4 +1,4 @@
-package de.anton.invoice.cecker.invoice_checker.view;
+package de.anton.invoice.checker.invoice_checker.view;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -7,7 +7,7 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import de.anton.invoice.cecker.invoice_checker.model.AreaDefinition;
+import de.anton.invoice.checker.invoice_checker.model.AreaDefinition;
 
 import javax.swing.*;
 import java.awt.*;

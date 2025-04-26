@@ -1,12 +1,12 @@
-package de.anton.invoice.cecker.invoice_checker.view;
+package de.anton.invoice.checker.invoice_checker.view;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import de.anton.invoice.cecker.invoice_checker.model.AreaDefinition;
-import de.anton.invoice.cecker.invoice_checker.model.ConfigurationService;
-import de.anton.invoice.cecker.invoice_checker.model.ExtractionConfiguration;
+import de.anton.invoice.checker.invoice_checker.model.AreaDefinition;
+import de.anton.invoice.checker.invoice_checker.model.ConfigurationService;
+import de.anton.invoice.checker.invoice_checker.model.ExtractionConfiguration;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
