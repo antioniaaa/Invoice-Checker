@@ -1,5 +1,5 @@
 Type; Keyword_incl_1; Keyword_incl_2; Keyword_incl_3; Keyword_excl_1; Keyword_excl_2; Area-Type; Flavor; Row Tol
-Netzbetreiber;E.DIS;Marktprämie;kWh;Messstelle;;EDis_small;lattice;2
+Netzbetreiber;E.DIS;Marktprämie;kWh;Messstelle;;EDis_small;stream;3
 Netzbetreiber; Avacon;Marktprämie;;Messstelle;; Konfig*; Flavor*; Row Tol*
 Netzbetreiber; WEMAG;Marktprämie;;;; Konfig*; Flavor*; Row Tol*
 Direktvermarkter; Interconnector;;;;; Konfig*; Flavor*; Row Tol*

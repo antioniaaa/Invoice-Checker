@@ -76,6 +76,11 @@
             <artifactId>jai-imageio-core</artifactId>
             <version>1.4.0</version>
         </dependency>
+        <dependency>
+    		<groupId>com.opencsv</groupId>
+    		<artifactId>opencsv</artifactId>
+    		<version>5.9</version> <!-- Oder die aktuellste Version -->
+		</dependency>
     </dependencies>
 
     <build>

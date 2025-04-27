@@ -1,15 +1,6 @@
 {
   "name" : "global",
   "usePageSpecificAreas" : false,
-  "globalAreas" : [ {
-    "x1" : 17.76,
-    "y1" : 17.729736,
-    "x2" : 439.2,
-    "y2" : 628.7698,
-    "width" : 421.44,
-    "height" : 611.04004
-  } ],
-  "pageSpecificAreasMap" : { },
   "globalAreasList" : [ {
     "x1" : 17.76,
     "y1" : 17.729736,
@@ -17,5 +8,6 @@
     "y2" : 628.7698,
     "width" : 421.44,
     "height" : 611.04004
-  } ]
+  } ],
+  "pageSpecificAreasMap" : { }
 }
