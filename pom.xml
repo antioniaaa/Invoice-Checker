@@ -81,6 +81,12 @@
     		<artifactId>opencsv</artifactId>
     		<version>5.9</version> <!-- Oder die aktuellste Version -->
 		</dependency>
+        <!-- https://mvnrepository.com/artifact/com.google.code.gson/gson -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.13.1</version>
+        </dependency>
     </dependencies>
 
     <build>

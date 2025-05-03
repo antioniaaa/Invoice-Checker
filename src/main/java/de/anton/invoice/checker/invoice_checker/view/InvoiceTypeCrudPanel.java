@@ -172,9 +172,11 @@ public class InvoiceTypeCrudPanel extends JPanel {
         isNewEntryMode = false; // Bearbeitungsmodus
         if (config != null) {
             txtType.setText(config.getType());
+
             txtKeywordIncl1.setText(config.getKeywordIncl1());
             txtKeywordIncl1.setEditable(false); // Primärkey nicht änderbar machen
             txtKeywordIncl1.setBackground(UIManager.getColor("TextField.inactiveBackground"));
+
             txtKeywordIncl2.setText(config.getKeywordIncl2());
             txtKeywordIncl3.setText(config.getKeywordIncl3());
             txtKeywordExcl1.setText(config.getKeywordExcl1());
@@ -198,7 +200,8 @@ public class InvoiceTypeCrudPanel extends JPanel {
 
     /** Leert das Formular und setzt es für eine neue Eingabe zurück. */
     public void prepareNewEntry() {
-        isNewEntryMode = true;
+        log.debug("prepareNewEntry() activated");
+        this.isNewEntryMode = true;
         configList.clearSelection(); // Auswahl in Liste aufheben
         clearForm();
         txtKeywordIncl1.setEditable(true); // Primärkey ist bei Neuerstellung editierbar
@@ -226,6 +229,7 @@ public class InvoiceTypeCrudPanel extends JPanel {
     /** Aktiviert oder deaktiviert die Formularfelder. */
     public void setFormEnabled(boolean enabled) {
         // KeywordIncl1 ist nur im Neu-Modus editierbar
+        log.debug("enabled: {}/isNewEntryMode:{}", enabled, isNewEntryMode);
         txtKeywordIncl1.setEditable(enabled && isNewEntryMode);
         txtKeywordIncl1.setBackground(enabled && isNewEntryMode ? UIManager.getColor("TextField.background") : UIManager.getColor("TextField.inactiveBackground"));
 

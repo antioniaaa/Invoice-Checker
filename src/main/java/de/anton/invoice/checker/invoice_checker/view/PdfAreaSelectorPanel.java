@@ -1,13 +1,12 @@
 package de.anton.invoice.checker.invoice_checker.view;
 
+import de.anton.invoice.checker.invoice_checker.model.AreaDefinition;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import de.anton.invoice.checker.invoice_checker.model.AreaDefinition;
 
 import javax.swing.*;
 import java.awt.*;
@@ -57,6 +56,7 @@ public class PdfAreaSelectorPanel extends JPanel {
     /**
      * Lädt ein neues PDF-Dokument zur Anzeige. Schließt ein eventuell vorher geladenes.
      * Zeigt standardmäßig die erste Seite an.
+     *
      * @param document Das PDDocument, das geladen werden soll.
      */
     public void loadDocument(PDDocument document) {
@@ -108,6 +108,7 @@ public class PdfAreaSelectorPanel extends JPanel {
     /**
      * Setzt die aktuell anzuzeigende Seite.
      * Löscht vorhandene Bereichsmarkierungen und rendert die neue Seite.
+     *
      * @param pageIndex Der 0-basierte Index der anzuzeigenden Seite.
      */
     public void setPage(int pageIndex) {
@@ -127,88 +128,113 @@ public class PdfAreaSelectorPanel extends JPanel {
 
     /**
      * Gibt den 0-basierten Index der aktuell angezeigten Seite zurück.
+     *
      * @return Der Seitenindex oder -1, wenn keine Seite angezeigt wird.
      */
-     public int getCurrentPageNumber() {
-         return currentPageNumber;
-     }
+    public int getCurrentPageNumber() {
+        return currentPageNumber;
+    }
 
-     /**
-      * Gibt die Gesamtzahl der Seiten im aktuell geladenen Dokument zurück.
-      * @return Die Seitenanzahl oder 0, wenn kein Dokument geladen ist.
-      */
-     public int getTotalPages() {
-         return (currentDocument != null) ? currentDocument.getNumberOfPages() : 0;
-     }
+    /**
+     * Gibt die Gesamtzahl der Seiten im aktuell geladenen Dokument zurück.
+     *
+     * @return Die Seitenanzahl oder 0, wenn kein Dokument geladen ist.
+     */
+    public int getTotalPages() {
+        return (currentDocument != null) ? currentDocument.getNumberOfPages() : 0;
+    }
 
 
     // --- Bereichs-Handling (Areas) ---
 
     /**
-     * Setzt die Liste der Bereiche, die auf der aktuell angezeigten Seite
-     * dargestellt werden sollen. Ersetzt alle vorhandenen Bereiche.
-     * @param areas Eine Liste von {@link AreaDefinition}-Objekten. Kann null oder leer sein.
+     * Gibt eine Kopie der Liste der aktuell auf dem Panel definierten Bereiche zurück
+     * (diese gelten nur für die aktuell angezeigte Seite).
+     *
+     * @return Eine Kopie der Liste der Bereiche.
      */
-     public void setAreas(List<AreaDefinition> areas) {
-         this.areasOnPage = new ArrayList<>(areas != null ? areas : Collections.emptyList());
-         log.debug("Setze {} Bereiche für Seite {}", this.areasOnPage.size(), this.currentPageNumber + 1);
-         repaint(); // Neu zeichnen, um die gesetzten Bereiche anzuzeigen
-     }
+    public List<AreaDefinition> getAreas() {
+        // Gib immer eine Kopie zurück, um externe Modifikationen zu verhindern
+        return new ArrayList<>(this.areasOnPage);
+    }
 
-     /**
-      * Gibt eine Kopie der Liste der aktuell auf dem Panel definierten Bereiche zurück
-      * (diese gelten nur für die aktuell angezeigte Seite).
-      * @return Eine Kopie der Liste der Bereiche.
-      */
-     public List<AreaDefinition> getAreas() {
-         // Gib immer eine Kopie zurück, um externe Modifikationen zu verhindern
-         return new ArrayList<>(this.areasOnPage);
-     }
+    /**
+     * Setzt die Liste der Bereiche, die auf der aktuell angezeigten Seite
+     * dargestellt werden sollen. Ersetzt alle vorhandenen Bereiche und
+     * feuert ein "areasChanged" PropertyChangeEvent.
+     *
+     * @param newAreas Eine Liste von {@link AreaDefinition}-Objekten. Kann null oder leer sein.
+     */
+    public void setAreas(List<AreaDefinition> newAreas) {
+        // Erstelle eine Kopie der alten Liste für das Event
+        List<AreaDefinition> oldAreas = new ArrayList<>(this.areasOnPage);
+        // Setze die neue Liste (immer eine neue Instanz, nie null)
+        this.areasOnPage = new ArrayList<>(newAreas != null ? newAreas : Collections.emptyList());
 
-     /**
-      * Entfernt einen spezifischen Bereich aus der Anzeige auf der aktuellen Seite.
-      * @param area Der zu entfernende Bereich.
-      */
-     public void removeArea(AreaDefinition area) {
-         if (area != null) {
-             boolean removed = this.areasOnPage.remove(area); // Entferne aus interner Liste
-             if (removed) {
-                 log.debug("Bereich entfernt: {}", area);
-                 repaint(); // Zeichne Panel neu
-                 // Feuere Event, damit der Dialog die JList aktualisieren kann
-                 firePropertyChange("areasChanged", null, getAreas());
-             } else {
-                 log.warn("Zu entfernender Bereich {} nicht in der Liste gefunden.", area);
-             }
-         }
-     }
+        log.debug("Setze {} Bereiche für Seite {}", this.areasOnPage.size(), this.currentPageNumber + 1);
+        repaint(); // Zeichne Panel neu, um die (neuen) Bereiche anzuzeigen
+
+        // --- NEU: Feuere das PropertyChangeEvent ---
+        // Feuere das Event, um Listener (wie den ConfigurationDialog) zu benachrichtigen.
+        // Es ist wichtig, Kopien zu übergeben, falls Listener die Listen ändern könnten.
+        firePropertyChange("areasChanged", oldAreas, new ArrayList<>(this.areasOnPage));
+        // ------------------------------------------
+    }
+
+    /**
+     * Entfernt einen spezifischen Bereich aus der Anzeige auf der aktuellen Seite.
+     *
+     * @param area Der zu entfernende Bereich.
+     */
+    public void removeArea(AreaDefinition area) {
+        if (area != null) {
+            // Erstelle eine Kopie der alten Liste für das Event
+            List<AreaDefinition> oldAreas = new ArrayList<>(this.areasOnPage);
+            boolean removed = this.areasOnPage.remove(area); // Entferne aus interner Liste
+
+            if (removed) {
+                log.debug("Bereich entfernt: {}", area);
+                repaint(); // Zeichne Panel neu
+                // Feuere Event, damit der Dialog die JList aktualisieren kann
+                // Übergib die alte und die (kopierte) neue Liste
+                firePropertyChange("areasChanged", oldAreas, new ArrayList<>(this.areasOnPage)); // Event auch hier feuern!
+            } else {
+                log.warn("Zu entfernender Bereich {} nicht in der Liste gefunden.", area);
+            }
+        }
+    }
 
     // --- Zoom Handling ---
 
-    /** Vergrößert die Anzeige der aktuellen Seite. */
+    /**
+     * Vergrößert die Anzeige der aktuellen Seite.
+     */
     public void zoomIn() {
         changeZoom(1.25f); // Faktor für Vergrößerung (z.B. 25%)
     }
 
-    /** Verkleinert die Anzeige der aktuellen Seite. */
+    /**
+     * Verkleinert die Anzeige der aktuellen Seite.
+     */
     public void zoomOut() {
         changeZoom(0.8f); // Faktor für Verkleinerung (z.B. 20%, entspricht 1 / 1.25)
     }
 
     /**
      * Ändert die Render-Skalierung und rendert die Seite neu.
+     *
      * @param factor Der Faktor, um den die Skalierung geändert wird (> 1 für Zoom In, < 1 für Zoom Out).
      */
     private void changeZoom(float factor) {
-         if (pageImage == null) return; // Zoomen nur möglich, wenn Bild da ist
-         float newScale = currentRenderScale * factor;
-         // Begrenze den Zoom auf sinnvolle Werte (optional)
-         newScale = Math.max(0.2f, Math.min(newScale, 8.0f)); // Min 20%, Max 800%
-         if (Math.abs(newScale - currentRenderScale) > 0.01f) { // Nur neu rendern, wenn sich Skala ändert
+        if (pageImage == null) return; // Zoomen nur möglich, wenn Bild da ist
+        float newScale = currentRenderScale * factor;
+        // Begrenze den Zoom auf sinnvolle Werte (optional)
+        newScale = Math.max(0.2f, Math.min(newScale, 8.0f)); // Min 20%, Max 800%
+        if (Math.abs(newScale - currentRenderScale) > 0.01f) { // Nur neu rendern, wenn sich Skala ändert
             log.info("Ändere Zoom von {} auf {}", currentRenderScale, newScale);
             currentRenderScale = newScale;
             renderPage(); // Seite mit neuer Skalierung neu rendern
-         }
+        }
     }
 
     // --- Rendering ---
@@ -228,18 +254,19 @@ public class PdfAreaSelectorPanel extends JPanel {
                 revalidate(); // Teile dem ScrollPane die neue Größe mit
                 repaint();    // Zeichne das neue Bild
                 log.debug("Seite {} gerendert ({}x{} Pixel @ Scale {})",
-                          currentPageNumber + 1, pageImage.getWidth(), pageImage.getHeight(), currentRenderScale);
+                        currentPageNumber + 1, pageImage.getWidth(), pageImage.getHeight(), currentRenderScale);
             } catch (IOException e) {
                 log.error("Fehler beim Rendern der PDF-Seite {}: {}", currentPageNumber + 1, e.getMessage());
                 resetPanelState(); // Bei Fehler zurücksetzen
             }
         } else {
-             resetPanelState(); // Kein Dokument -> zurücksetzen
+            resetPanelState(); // Kein Dokument -> zurücksetzen
         }
     }
 
     /**
      * Zeichnet die Komponente: das PDF-Seitenbild und die Auswahlrechtecke.
+     *
      * @param g Das Graphics-Objekt zum Zeichnen.
      */
     @Override
@@ -312,14 +339,17 @@ public class PdfAreaSelectorPanel extends JPanel {
             // Verwende CropBox als primäre Referenz, sonst MediaBox
             PDRectangle box = page.getCropBox();
             if (box == null) box = page.getMediaBox();
-            if (box == null) { log.warn("Keine Page Size Box gefunden für Seite {}", currentPageNumber+1); return null; }
+            if (box == null) {
+                log.warn("Keine Page Size Box gefunden für Seite {}", currentPageNumber + 1);
+                return null;
+            }
 
             float pageHeightPdfPoints = box.getHeight(); // Höhe der Seite in PDF-Punkten
 
             // Skaliere Pixel zurück zu relativen PDF-Einheiten (bezogen auf den Box-Ursprung)
             // basierend auf der Skalierung, mit der das Bild gerendert wurde.
-            float pdfXRel = (float) (swingPixels.x / currentRenderScale);
-            float pdfYRelFromTop = (float) (swingPixels.y / currentRenderScale);
+            float pdfXRel = swingPixels.x / currentRenderScale;
+            float pdfYRelFromTop = swingPixels.y / currentRenderScale;
 
             // Konvertiere Y-Koordinate von "Abstand von oben" zu "Abstand von unten"
             float pdfYRelFromBottom = pageHeightPdfPoints - pdfYRelFromTop;
@@ -338,54 +368,56 @@ public class PdfAreaSelectorPanel extends JPanel {
         }
     }
 
-     /**
-      * Transformiert einen Bereich von PDF-Koordinaten (Ursprung unten links)
-      * in Swing-Pixel-Koordinaten (Ursprung oben links) für die Anzeige.
-      * Berücksichtigt die aktuelle Render-Skalierung und die PDF-Seitenbox.
-      * VEREINFACHT: Ignoriert Seitenrotation.
-      *
-      * @param pdfArea Der Bereich in PDF-Koordinaten.
-      * @return Das Rechteck in Swing-Pixelkoordinaten oder null bei Fehlern.
-      */
-     private Rectangle transformPdfAreaToSwingPixels(AreaDefinition pdfArea) {
-         if (currentDocument == null || currentPageNumber < 0 || pdfArea == null || pageImage == null) return null;
+    /**
+     * Transformiert einen Bereich von PDF-Koordinaten (Ursprung unten links)
+     * in Swing-Pixel-Koordinaten (Ursprung oben links) für die Anzeige.
+     * Berücksichtigt die aktuelle Render-Skalierung und die PDF-Seitenbox.
+     * VEREINFACHT: Ignoriert Seitenrotation.
+     *
+     * @param pdfArea Der Bereich in PDF-Koordinaten.
+     * @return Das Rechteck in Swing-Pixelkoordinaten oder null bei Fehlern.
+     */
+    private Rectangle transformPdfAreaToSwingPixels(AreaDefinition pdfArea) {
+        if (currentDocument == null || currentPageNumber < 0 || pdfArea == null || pageImage == null) return null;
 
-         try {
-             PDPage page = currentDocument.getPage(currentPageNumber);
-             PDRectangle box = page.getCropBox(); if (box == null) box = page.getMediaBox(); if (box == null) return null;
+        try {
+            PDPage page = currentDocument.getPage(currentPageNumber);
+            PDRectangle box = page.getCropBox();
+            if (box == null) box = page.getMediaBox();
+            if (box == null) return null;
 
-             float pageHeightPdfPoints = box.getHeight();
+            float pageHeightPdfPoints = box.getHeight();
 
-             // PDF-Koordinaten des Bereichs (absolut, Ursprung unten links)
-             float pdfX1 = pdfArea.getX1();
-             float pdfY1_bottom = pdfArea.getY1(); // Untere Y-Koordinate
-             float pdfWidth = pdfArea.getWidth();
-             float pdfHeight = pdfArea.getHeight();
-             float pdfY2_top = pdfY1_bottom + pdfHeight; // Obere Y-Koordinate im PDF-System
+            // PDF-Koordinaten des Bereichs (absolut, Ursprung unten links)
+            float pdfX1 = pdfArea.getX1();
+            float pdfY1_bottom = pdfArea.getY1(); // Untere Y-Koordinate
+            float pdfWidth = pdfArea.getWidth();
+            float pdfHeight = pdfArea.getHeight();
+            float pdfY2_top = pdfY1_bottom + pdfHeight; // Obere Y-Koordinate im PDF-System
 
-             // Mache Koordinaten relativ zum Ursprung der Box (oft nicht 0,0)
-             float pdfX1_relative = pdfX1 - box.getLowerLeftX();
-             float pdfY2_relative_from_bottom = pdfY2_top - box.getLowerLeftY(); // Obere Y relativ zu unten links der Box
+            // Mache Koordinaten relativ zum Ursprung der Box (oft nicht 0,0)
+            float pdfX1_relative = pdfX1 - box.getLowerLeftX();
+            float pdfY2_relative_from_bottom = pdfY2_top - box.getLowerLeftY(); // Obere Y relativ zu unten links der Box
 
-             // Transformiere obere Y-Koordinate zu "Abstand von oben" (relativ zur Box)
-             float pdfY_relative_from_top = pageHeightPdfPoints - pdfY2_relative_from_bottom;
+            // Transformiere obere Y-Koordinate zu "Abstand von oben" (relativ zur Box)
+            float pdfY_relative_from_top = pageHeightPdfPoints - pdfY2_relative_from_bottom;
 
-             // Skaliere zu Pixeln mit der aktuellen Render-Skalierung
-             // Runde auf ganze Pixel für die Darstellung
-             int swingX = Math.round(pdfX1_relative * currentRenderScale);
-             int swingY = Math.round(pdfY_relative_from_top * currentRenderScale); // Obere linke Ecke Y in Pixeln
-             int swingWidth = Math.round(pdfWidth * currentRenderScale);
-             int swingHeight = Math.round(pdfHeight * currentRenderScale);
+            // Skaliere zu Pixeln mit der aktuellen Render-Skalierung
+            // Runde auf ganze Pixel für die Darstellung
+            int swingX = Math.round(pdfX1_relative * currentRenderScale);
+            int swingY = Math.round(pdfY_relative_from_top * currentRenderScale); // Obere linke Ecke Y in Pixeln
+            int swingWidth = Math.round(pdfWidth * currentRenderScale);
+            int swingHeight = Math.round(pdfHeight * currentRenderScale);
 
-              // TODO: Seitenrotation muss hier berücksichtigt werden!
+            // TODO: Seitenrotation muss hier berücksichtigt werden!
 
-             return new Rectangle(swingX, swingY, swingWidth, swingHeight);
+            return new Rectangle(swingX, swingY, swingWidth, swingHeight);
 
-         } catch (Exception e) {
-             log.error("Fehler bei PDF -> Swing Koordinatentransformation: {}", e.getMessage());
-             return null;
-         }
-     }
+        } catch (Exception e) {
+            log.error("Fehler bei PDF -> Swing Koordinatentransformation: {}", e.getMessage());
+            return null;
+        }
+    }
 
     // --- Innerer Mouse Listener für Bereichsauswahl ---
     private class AreaMouseListener extends MouseAdapter {
@@ -410,52 +442,61 @@ public class PdfAreaSelectorPanel extends JPanel {
 
         @Override
         public void mouseReleased(MouseEvent e) {
-             // Beende nur, wenn gerade gezogen wurde
-             if (!isDragging || dragStartPointPixels == null || pageImage == null || !isEnabled()) return;
-             isDragging = false; // Ziehen ist beendet
-             dragEndPointPixels = e.getPoint(); // Finaler Endpunkt in Pixeln
-             log.trace("MouseReleased bei Pixel: {}", dragEndPointPixels);
+            // Beende nur, wenn gerade gezogen wurde
+            if (!isDragging || dragStartPointPixels == null || pageImage == null || !isEnabled()) {
+                // Setze isDragging zurück, auch wenn nichts hinzugefügt wird
+                isDragging = false;
+                repaint(); // Um ggf. rotes Rechteck zu entfernen
+                return;
+            }
+            isDragging = false; // Ziehen ist beendet
+            dragEndPointPixels = e.getPoint(); // Finaler Endpunkt in Pixeln
+            log.trace("MouseReleased bei Pixel: {}", dragEndPointPixels);
 
-             // Berechne das finale Auswahlrechteck in Pixeln
-             int x = Math.min(dragStartPointPixels.x, dragEndPointPixels.x);
-             int y = Math.min(dragStartPointPixels.y, dragEndPointPixels.y);
-             int width = Math.abs(dragStartPointPixels.x - dragEndPointPixels.x);
-             int height = Math.abs(dragStartPointPixels.y - dragEndPointPixels.y);
-             Rectangle selectionPx = new Rectangle(x, y, width, height);
+            // Berechne das finale Auswahlrechteck in Pixeln
+            int x = Math.min(dragStartPointPixels.x, dragEndPointPixels.x);
+            int y = Math.min(dragStartPointPixels.y, dragEndPointPixels.y);
+            int width = Math.abs(dragStartPointPixels.x - dragEndPointPixels.x);
+            int height = Math.abs(dragStartPointPixels.y - dragEndPointPixels.y);
+            Rectangle selectionPx = new Rectangle(x, y, width, height);
 
-             // Verhindere zu kleine oder invalide Rechtecke
-             if (selectionPx.width < 5 || selectionPx.height < 5) {
-                 log.debug("Auswahlrechteck zu klein, ignoriert.");
-             } else {
-                 // Transformiere die Pixel-Eckpunkte in PDF-Koordinaten
-                 Point2D.Float pdfP1 = transformSwingPixelsToPdfPoints(dragStartPointPixels);
-                 Point2D.Float pdfP2 = transformSwingPixelsToPdfPoints(dragEndPointPixels);
+            // Verhindere zu kleine oder invalide Rechtecke
+            if (selectionPx.width < 5 || selectionPx.height < 5) {
+                log.debug("Auswahlrechteck zu klein, ignoriert.");
+            } else {
+                // Transformiere die Pixel-Eckpunkte in PDF-Koordinaten
+                Point2D.Float pdfP1 = transformSwingPixelsToPdfPoints(dragStartPointPixels);
+                Point2D.Float pdfP2 = transformSwingPixelsToPdfPoints(dragEndPointPixels);
 
-                 // Nur fortfahren, wenn Transformation erfolgreich war
-                 if (pdfP1 != null && pdfP2 != null) {
-                     // Erstelle das AreaDefinition-Objekt (Konstruktor sortiert Ecken)
-                     AreaDefinition newArea = new AreaDefinition(pdfP1.x, pdfP1.y, pdfP2.x, pdfP2.y);
-                     log.info("Neuen Bereich hinzugefügt (PDF Koordinaten): {}", newArea);
+                // Nur fortfahren, wenn Transformation erfolgreich war
+                if (pdfP1 != null && pdfP2 != null) {
+                    // Erstelle das AreaDefinition-Objekt (Konstruktor sortiert Ecken)
+                    AreaDefinition newArea = new AreaDefinition(pdfP1.x, pdfP1.y, pdfP2.x, pdfP2.y);
+                    log.info("Neuen Bereich hinzugefügt (PDF Koordinaten): {}", newArea);
 
-                     // Füge den neuen Bereich zur Liste für die aktuelle Seite hinzu
-                     areasOnPage.add(newArea);
+                    // Erstelle eine Kopie der alten Liste *bevor* der neue Bereich hinzugefügt wird
+                    List<AreaDefinition> oldAreas = new ArrayList<>(areasOnPage);
 
-                     // Feuere ein Event, um den Dialog (z.B. die JList) zu benachrichtigen
-                     // Übergibt die (aktualisierte) Liste der Bereiche für DIESE Seite
-                     firePropertyChange("areasChanged", null, getAreas());
+                    // Füge den neuen Bereich zur Liste für die aktuelle Seite hinzu
+                    areasOnPage.add(newArea);
 
-                 } else {
-                      // Fehler bei der Transformation
-                      log.error("Konnte Auswahl nicht in PDF-Koordinaten umwandeln.");
-                      JOptionPane.showMessageDialog(PdfAreaSelectorPanel.this,
-                              "Fehler bei der Koordinatentransformation.\nIst das PDF korrekt formatiert oder gedreht?",
-                              "Transformationsfehler", JOptionPane.WARNING_MESSAGE);
-                 }
-             }
-             // Setze Zieh-Variablen zurück für die nächste Auswahl
-             dragStartPointPixels = null;
-             dragEndPointPixels = null;
-             repaint(); // Zeichne Panel neu (ohne rotes Rechteck, aber mit neuem blauen Bereich)
+                    // Feuere ein Event, um den Dialog (z.B. die JList) zu benachrichtigen
+                    // Übergibt die (aktualisierte) Liste der Bereiche für DIESE Seite
+                    //firePropertyChange("areasChanged", null, getAreas());
+
+                    firePropertyChange("areasChanged", oldAreas, new ArrayList<>(areasOnPage)); // Geänderte Liste übergeben
+                } else {
+                    // Fehler bei der Transformation
+                    log.error("Konnte Auswahl nicht in PDF-Koordinaten umwandeln.");
+                    JOptionPane.showMessageDialog(PdfAreaSelectorPanel.this,
+                            "Fehler bei der Koordinatentransformation.\nIst das PDF korrekt formatiert oder gedreht?",
+                            "Transformationsfehler", JOptionPane.WARNING_MESSAGE);
+                }
+            }
+            // Setze Zieh-Variablen zurück für die nächste Auswahl
+            dragStartPointPixels = null;
+            dragEndPointPixels = null;
+            repaint(); // Zeichne Panel neu (ohne rotes Rechteck, aber mit neuem blauen Bereich)
         }
     }
 }

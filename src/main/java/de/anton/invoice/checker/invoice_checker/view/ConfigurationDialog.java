@@ -1,12 +1,11 @@
 package de.anton.invoice.checker.invoice_checker.view;
 
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import de.anton.invoice.checker.invoice_checker.model.AreaDefinition;
 import de.anton.invoice.checker.invoice_checker.model.ConfigurationService;
 import de.anton.invoice.checker.invoice_checker.model.ExtractionConfiguration;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -18,6 +17,8 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 // import java.util.stream.Collectors; // Nicht unbedingt hier benötigt
@@ -30,6 +31,7 @@ import java.util.List;
 public class ConfigurationDialog extends JDialog {
     private static final Logger log = LoggerFactory.getLogger(ConfigurationDialog.class);
 
+    private static String path2examples = null;
     private final ConfigurationService configService; // Zum Speichern/Laden
     private ExtractionConfiguration currentConfiguration; // Die Konfiguration, die bearbeitet wird
     private PDDocument loadedPdfDoc; // Das im Dialog für die Vorschau geladene PDF
@@ -38,6 +40,7 @@ public class ConfigurationDialog extends JDialog {
     private PdfAreaSelectorPanel pdfPanel; // Panel für PDF-Anzeige und Bereichsauswahl
     private JList<AreaDefinition> areaList; // Zeigt definierte Bereiche für aktuelle Seite
     private DefaultListModel<AreaDefinition> areaListModel; // Datenmodell für die JList
+    private JButton btnLoadConfigAreas;// Laden bereits existierender JSON-Areas
     private JButton btnLoadPdf;      // Button zum Laden eines Vorschau-PDFs
     private JButton btnPrevPage;     // Button zur vorherigen Seite
     private JButton btnNextPage;     // Button zur nächsten Seite
@@ -56,7 +59,8 @@ public class ConfigurationDialog extends JDialog {
 
     /**
      * Konstruktor für den Konfigurationsdialog.
-     * @param owner Das übergeordnete Fenster (Frame).
+     *
+     * @param owner         Das übergeordnete Fenster (Frame).
      * @param configService Der Service zum Laden/Speichern von Konfigurationen.
      * @param initialConfig Die Konfiguration, die bearbeitet werden soll (kann null sein für neue Konfig).
      */
@@ -67,25 +71,25 @@ public class ConfigurationDialog extends JDialog {
         // Erstelle eine Kopie der übergebenen Konfiguration oder eine neue,
         // damit das Original nicht direkt verändert wird.
         if (initialConfig != null) {
-             // Einfaches Klonen über Speichern/Laden (Workaround, da keine Klon-Methode implementiert ist)
-             try {
+            // Einfaches Klonen über Speichern/Laden (Workaround, da keine Klon-Methode implementiert ist)
+            try {
                 // Speichere kurz unter temporärem Namen oder dem Originalnamen
                 configService.saveConfiguration(initialConfig);
                 // Lade die gerade gespeicherte Version als Kopie
                 this.currentConfiguration = configService.loadConfiguration(initialConfig.getName());
                 if (this.currentConfiguration == null) { // Fallback, falls Laden fehlschlägt
-                     log.warn("Konnte Konfiguration '{}' nicht neu laden nach temporärem Speichern. Erstelle leere Kopie.", initialConfig.getName());
-                     this.currentConfiguration = new ExtractionConfiguration("Kopie von " + initialConfig.getName());
+                    log.warn("Konnte Konfiguration '{}' nicht neu laden nach temporärem Speichern. Erstelle leere Kopie.", initialConfig.getName());
+                    this.currentConfiguration = new ExtractionConfiguration("Kopie von " + initialConfig.getName());
                 } else {
-                     log.debug("Arbeitskopie von Konfiguration '{}' erstellt.", initialConfig.getName());
+                    log.debug("Arbeitskopie von Konfiguration '{}' erstellt.", initialConfig.getName());
                 }
-             } catch(Exception e) {
-                  log.error("Fehler beim Klonen der Konfiguration '{}', erstelle neue.", initialConfig.getName(), e);
-                  this.currentConfiguration = new ExtractionConfiguration("Neue Konfiguration");
-             }
+            } catch (Exception e) {
+                log.error("Fehler beim Klonen der Konfiguration '{}', erstelle neue.", initialConfig.getName(), e);
+                this.currentConfiguration = new ExtractionConfiguration("Neue Konfiguration");
+            }
         } else {
-             // Keine initiale Konfiguration übergeben -> Neue erstellen
-             this.currentConfiguration = new ExtractionConfiguration("Neue Konfiguration");
+            // Keine initiale Konfiguration übergeben -> Neue erstellen
+            this.currentConfiguration = new ExtractionConfiguration("Neue Konfiguration");
         }
 
         // Initialisiere alle GUI-Komponenten
@@ -105,6 +109,10 @@ public class ConfigurationDialog extends JDialog {
         setMinimumSize(new Dimension(900, 700));
         setSize(1100, 800); // Initiale Größe
         setLocationRelativeTo(owner); // Zentriere relativ zum Hauptfenster
+    }
+
+    public static void setPath2examples(String path2examples) {
+        ConfigurationDialog.path2examples = path2examples;
     }
 
     /**
@@ -128,6 +136,9 @@ public class ConfigurationDialog extends JDialog {
         });
 
         // Buttons
+        btnLoadConfigAreas = new JButton("Bereiche aus Konfig laden...");
+        btnLoadConfigAreas.setToolTipText("Lädt Bereichsdefinitionen aus einer bestehenden JSON-Datei.");
+        btnLoadConfigAreas.setEnabled(true);
         btnLoadPdf = new JButton("Vorschau-PDF laden...");
         btnLoadPdf.setToolTipText("Lädt ein PDF zur Definition von Bereichen.");
         btnPrevPage = new JButton("< Vorherige");
@@ -170,6 +181,9 @@ public class ConfigurationDialog extends JDialog {
         // Außenabstand hinzufügen
         mainPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
+        JPanel loadSavePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        loadSavePanel.add(btnLoadConfigAreas);
+
         // PDF-Anzeigebereich in der Mitte, eingebettet in ein Scrollpane
         JScrollPane scrollPanePdf = new JScrollPane(pdfPanel);
         mainPanel.add(scrollPanePdf, BorderLayout.CENTER); // Nimmt den meisten Platz ein
@@ -190,10 +204,22 @@ public class ConfigurationDialog extends JDialog {
         GridBagConstraints gbcConf = new GridBagConstraints();
         gbcConf.insets = new Insets(2, 5, 2, 5); // Innenabstände
         gbcConf.anchor = GridBagConstraints.WEST;
-        gbcConf.gridx = 0; gbcConf.gridy = 0; configPanel.add(new JLabel("Name:"), gbcConf);
-        gbcConf.gridx = 1; gbcConf.weightx = 1.0; gbcConf.fill = GridBagConstraints.HORIZONTAL; configPanel.add(txtConfigName, gbcConf); // Textfeld dehnt sich aus
-        gbcConf.gridx = 0; gbcConf.gridy = 1; gbcConf.gridwidth = 2; gbcConf.weightx = 0; gbcConf.fill = GridBagConstraints.NONE; configPanel.add(radioPageSpecific, gbcConf);
-        gbcConf.gridy = 2; configPanel.add(radioGlobal, gbcConf);
+        gbcConf.gridx = 0;
+        gbcConf.gridy = 0;
+        configPanel.add(new JLabel("Name:"), gbcConf);
+        gbcConf.gridx = 1;
+        gbcConf.weightx = 1.0;
+        gbcConf.fill = GridBagConstraints.HORIZONTAL;
+        configPanel.add(txtConfigName, gbcConf); // Textfeld dehnt sich aus
+        gbcConf.gridx = 0;
+        gbcConf.gridy = 1;
+        gbcConf.gridwidth = 2;
+        gbcConf.weightx = 0;
+        gbcConf.fill = GridBagConstraints.NONE;
+        configPanel.add(radioPageSpecific, gbcConf);
+        gbcConf.gridy = 2;
+        configPanel.add(radioGlobal, gbcConf);
+        configPanel.add(loadSavePanel, gbcRight);
         // Füge KonfigPanel zum rechten Panel hinzu
         gbcRight.gridy = 0; // Erste Zeile im rechten Panel
         gbcRight.weighty = 0; // Höhe nicht variabel
@@ -205,19 +231,34 @@ public class ConfigurationDialog extends JDialog {
         GridBagConstraints gbcPdf = new GridBagConstraints();
         gbcPdf.insets = new Insets(5, 5, 5, 5); // Innenabstände
         // Ladebutton über die ganze Breite
-        gbcPdf.gridx = 0; gbcPdf.gridy = 0; gbcPdf.gridwidth = 5; gbcPdf.fill = GridBagConstraints.HORIZONTAL;
+        gbcPdf.gridx = 0;
+        gbcPdf.gridy = 0;
+        gbcPdf.gridwidth = 5;
+        gbcPdf.fill = GridBagConstraints.HORIZONTAL;
         pdfControlPanel.add(btnLoadPdf, gbcPdf);
         // Navigation und Zoom in der nächsten Zeile
-        gbcPdf.gridy = 1; gbcPdf.gridwidth = 1; gbcPdf.fill = GridBagConstraints.NONE; // Buttons nicht füllen lassen
-        gbcPdf.anchor = GridBagConstraints.LINE_START; gbcPdf.weightx = 0.1; // Wenig Platz für Buttons
+        gbcPdf.gridy = 1;
+        gbcPdf.gridwidth = 1;
+        gbcPdf.fill = GridBagConstraints.NONE; // Buttons nicht füllen lassen
+        gbcPdf.anchor = GridBagConstraints.LINE_START;
+        gbcPdf.weightx = 0.1; // Wenig Platz für Buttons
         pdfControlPanel.add(btnPrevPage, gbcPdf);
-        gbcPdf.gridx = 1; gbcPdf.anchor = GridBagConstraints.CENTER; gbcPdf.weightx = 0.7; // Viel Platz für Label
+        gbcPdf.gridx = 1;
+        gbcPdf.anchor = GridBagConstraints.CENTER;
+        gbcPdf.weightx = 0.7; // Viel Platz für Label
         pdfControlPanel.add(lblPageInfo, gbcPdf);
-        gbcPdf.gridx = 2; gbcPdf.anchor = GridBagConstraints.LINE_END; gbcPdf.weightx = 0.1;
+        gbcPdf.gridx = 2;
+        gbcPdf.anchor = GridBagConstraints.LINE_END;
+        gbcPdf.weightx = 0.1;
         pdfControlPanel.add(btnNextPage, gbcPdf);
-        gbcPdf.gridx = 3; gbcPdf.anchor = GridBagConstraints.LINE_END; gbcPdf.weightx = 0.05; gbcPdf.insets = new Insets(5, 0, 5, 0); // Kein horizontaler Abstand
+        gbcPdf.gridx = 3;
+        gbcPdf.anchor = GridBagConstraints.LINE_END;
+        gbcPdf.weightx = 0.05;
+        gbcPdf.insets = new Insets(5, 0, 5, 0); // Kein horizontaler Abstand
         pdfControlPanel.add(btnZoomOut, gbcPdf);
-        gbcPdf.gridx = 4; gbcPdf.anchor = GridBagConstraints.LINE_END; gbcPdf.weightx = 0.05;
+        gbcPdf.gridx = 4;
+        gbcPdf.anchor = GridBagConstraints.LINE_END;
+        gbcPdf.weightx = 0.05;
         pdfControlPanel.add(btnZoomIn, gbcPdf);
         // Füge PDFControlPanel zum rechten Panel hinzu
         gbcRight.gridy = 1; // Zweite Zeile im rechten Panel
@@ -257,11 +298,14 @@ public class ConfigurationDialog extends JDialog {
         setContentPane(mainPanel);
     }
 
+    // --- Aktionen der Buttons und Steuerelemente ---
+
     /**
      * Registriert die Action- und ChangeListener für die GUI-Komponenten.
      */
     private void addListeners() {
         // Button-Aktionen
+        btnLoadConfigAreas.addActionListener(e -> loadConfigAreasAction());
         btnLoadPdf.addActionListener(e -> loadPdfAction());
         btnPrevPage.addActionListener(e -> changePage(-1));
         btnNextPage.addActionListener(e -> changePage(1));
@@ -289,11 +333,11 @@ public class ConfigurationDialog extends JDialog {
         });
     }
 
-    // --- Aktionen der Buttons und Steuerelemente ---
-
-    /** Lädt ein PDF zur Vorschau und Bereichsdefinition. */
+    /**
+     * Lädt ein PDF zur Vorschau und Bereichsdefinition.
+     */
     private void loadPdfAction() {
-        JFileChooser chooser = new JFileChooser();
+        JFileChooser chooser = new JFileChooser(path2examples);
         chooser.setFileFilter(new FileNameExtensionFilter("PDF Dokumente", "pdf"));
         chooser.setDialogTitle("Vorschau-PDF auswählen");
         int result = chooser.showOpenDialog(this);
@@ -316,7 +360,9 @@ public class ConfigurationDialog extends JDialog {
         }
     }
 
-    /** Wechselt zur nächsten oder vorherigen Seite im Vorschau-PDF. */
+    /**
+     * Wechselt zur nächsten oder vorherigen Seite im Vorschau-PDF.
+     */
     private void changePage(int delta) {
         if (loadedPdfDoc == null) return; // Kein PDF geladen
         int currentPageIdx = pdfPanel.getCurrentPageNumber(); // Aktueller 0-basierter Index
@@ -336,49 +382,57 @@ public class ConfigurationDialog extends JDialog {
         }
     }
 
-    /** Speichert die aktuell im Panel sichtbaren Bereiche in das Konfigurationsobjekt für die gegebene Seite. */
+    /**
+     * Speichert die aktuell im Panel sichtbaren Bereiche in das Konfigurationsobjekt für die gegebene Seite.
+     */
     private void saveAreasForCurrentPage(int pageIndexToSave) {
-         // Nur speichern, wenn Index gültig ist (größer/gleich 0)
-         if (pageIndexToSave < 0) return;
+        // Nur speichern, wenn Index gültig ist (größer/gleich 0)
+        if (pageIndexToSave < 0) return;
 
-         int pageNumOneBased = pageIndexToSave + 1; // Konfiguration verwendet 1-basierte Seitenzahlen
-         if (currentConfiguration != null) {
-              List<AreaDefinition> areasFromPanel = pdfPanel.getAreas(); // Hole aktuelle Bereiche vom Panel
-              if (currentConfiguration.isUsePageSpecificAreas()) {
-                  // Speichere als seitenspezifische Bereiche
-                  currentConfiguration.setPageSpecificAreas(pageNumOneBased, areasFromPanel);
-                  log.debug("Seitenspezifische Bereiche für Seite {} gespeichert (Anzahl: {}).", pageNumOneBased, areasFromPanel.size());
-              } else {
-                   // Speichere als globale Bereiche (überschreibt vorherige globale)
-                   currentConfiguration.setGlobalAreas(areasFromPanel);
-                   log.debug("Globale Bereiche gespeichert (bearbeitet auf Seite {}, Anzahl: {}).", pageNumOneBased, areasFromPanel.size());
-              }
-         }
+        int pageNumOneBased = pageIndexToSave + 1; // Konfiguration verwendet 1-basierte Seitenzahlen
+        if (currentConfiguration != null) {
+            List<AreaDefinition> areasFromPanel = pdfPanel.getAreas(); // Hole aktuelle Bereiche vom Panel
+            if (currentConfiguration.isUsePageSpecificAreas()) {
+                // Speichere als seitenspezifische Bereiche
+                currentConfiguration.setPageSpecificAreas(pageNumOneBased, areasFromPanel);
+                log.debug("Seitenspezifische Bereiche für Seite {} gespeichert (Anzahl: {}).", pageNumOneBased, areasFromPanel.size());
+            } else {
+                // Speichere als globale Bereiche (überschreibt vorherige globale)
+                currentConfiguration.setGlobalAreas(areasFromPanel);
+                log.debug("Globale Bereiche gespeichert (bearbeitet auf Seite {}, Anzahl: {}).", pageNumOneBased, areasFromPanel.size());
+            }
+        }
     }
 
-     /** Lädt die Bereiche für die aktuell im Panel angezeigte Seite aus der Konfiguration und zeigt sie an. */
+    /**
+     * Lädt die Bereiche für die aktuell im Panel angezeigte Seite aus der Konfiguration und zeigt sie an.
+     */
     private void loadAreasForCurrentPage() {
         int currentPageIdx = pdfPanel.getCurrentPageNumber(); // Aktueller 0-basierter Index
         int pageNumOneBased = currentPageIdx + 1;
         List<AreaDefinition> areasToShow = new ArrayList<>(); // Leere Liste als Default
 
         if (pageNumOneBased > 0 && currentConfiguration != null) {
-             if (currentConfiguration.isUsePageSpecificAreas()) {
-                 // Lade seitenspezifische Bereiche für diese Seite
-                 areasToShow = currentConfiguration.getPageSpecificAreas(pageNumOneBased);
-                 log.debug("Lade {} seitenspezifische Bereiche für Seite {}.", areasToShow.size(), pageNumOneBased);
-             } else {
-                 // Lade globale Bereiche (da globaler Modus aktiv ist)
-                 areasToShow = currentConfiguration.getGlobalAreasList();
-                 log.debug("Lade {} globale Bereiche (Anzeige auf Seite {}).", areasToShow.size(), pageNumOneBased);
-             }
+//            log.debug("Lade Bereiche für Seite {} im Modus: {}", pageNumOneBased, currentConfiguration.isUsePageSpecificAreas() ? "Seitenspezifisch" : "Global"); // <-- LOGGING
+            if (currentConfiguration.isUsePageSpecificAreas()) {
+                // Lade seitenspezifische Bereiche für diese Seite
+//                log.debug("Lade Bereiche für Seite {}... (Config Hash: {})", pageNumOneBased, currentConfiguration.hashCode());
+                areasToShow = currentConfiguration.getPageSpecificAreas(pageNumOneBased);
+//                log.debug("-> Geladen: {} Bereiche (Config Hash: {})", areasToShow.size(), currentConfiguration.hashCode());
+//                log.debug("Lade {} seitenspezifische Bereiche für Seite {}.", areasToShow.size(), pageNumOneBased);
+            } else {
+                // Lade globale Bereiche (da globaler Modus aktiv ist)
+                areasToShow = currentConfiguration.getGlobalAreasList();
+//                log.debug("Lade {} globale Bereiche (Anzeige auf Seite {}).", areasToShow.size(), pageNumOneBased);
+            }
         }
         pdfPanel.setAreas(areasToShow); // Setze Bereiche im Panel (löst repaint und PropertyChange aus)
         // updateAreaList(); // Wird jetzt durch PropertyChangeListener vom Panel getriggert
     }
 
-
-    /** Entfernt den in der JList ausgewählten Bereich aus dem Panel und der Konfiguration. */
+    /**
+     * Entfernt den in der JList ausgewählten Bereich aus dem Panel und der Konfiguration.
+     */
     private void removeSelectedArea() {
         AreaDefinition selectedArea = areaList.getSelectedValue(); // Hole Auswahl aus JList
         if (selectedArea != null && pdfPanel != null) {
@@ -391,7 +445,9 @@ public class ConfigurationDialog extends JDialog {
         }
     }
 
-    /** Speichert die aktuelle Konfiguration (Name, Modus, Bereiche) und schließt den Dialog. */
+    /**
+     * Speichert die aktuelle Konfiguration (Name, Modus, Bereiche) und schließt den Dialog.
+     */
     private void saveConfigurationAction() {
         String configName = txtConfigName.getText().trim();
         if (configName.isEmpty()) {
@@ -416,28 +472,32 @@ public class ConfigurationDialog extends JDialog {
         } catch (IOException e) {
             log.error("Fehler beim Speichern der Konfiguration '{}'", configName, e);
             JOptionPane.showMessageDialog(this, "Fehler beim Speichern der Konfiguration:\n" + e.getMessage(), "Speicherfehler", JOptionPane.ERROR_MESSAGE);
-        } catch(IllegalArgumentException e) {
-             // Z.B. wenn Name leer war (sollte oben abgefangen werden)
-             JOptionPane.showMessageDialog(this, "Fehler: " + e.getMessage(), "Speichern fehlgeschlagen", JOptionPane.ERROR_MESSAGE);
+        } catch (IllegalArgumentException e) {
+            // Z.B. wenn Name leer war (sollte oben abgefangen werden)
+            JOptionPane.showMessageDialog(this, "Fehler: " + e.getMessage(), "Speichern fehlgeschlagen", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    /** Aktualisiert die JList mit den Bereichen, die aktuell im PdfAreaSelectorPanel sind. */
+    /**
+     * Aktualisiert die JList mit den Bereichen, die aktuell im PdfAreaSelectorPanel sind.
+     */
     private void updateAreaList() {
         // Diese Methode wird jetzt durch den PropertyChangeListener aufgerufen, wenn
         // das Panel das "areasChanged" Event feuert.
         if (pdfPanel != null) {
-             areaListModel.clear(); // Liste leeren
-             List<AreaDefinition> currentAreas = pdfPanel.getAreas(); // Aktuelle Bereiche holen
-             for (AreaDefinition area : currentAreas) {
-                 areaListModel.addElement(area); // Zur Liste hinzufügen
-             }
-             // Status des Löschen-Buttons aktualisieren
-             btnRemoveArea.setEnabled(areaList.getSelectedIndex() != -1);
+            areaListModel.clear(); // Liste leeren
+            List<AreaDefinition> currentAreas = pdfPanel.getAreas(); // Aktuelle Bereiche holen
+            for (AreaDefinition area : currentAreas) {
+                areaListModel.addElement(area); // Zur Liste hinzufügen
+            }
+            // Status des Löschen-Buttons aktualisieren
+            btnRemoveArea.setEnabled(areaList.getSelectedIndex() != -1);
         }
     }
 
-     /** Aktualisiert die Seitenanzeige ("Seite x / y") und den Enabled-Status der Navigations- und Zoom-Buttons. */
+    /**
+     * Aktualisiert die Seitenanzeige ("Seite x / y") und den Enabled-Status der Navigations- und Zoom-Buttons.
+     */
     private void updatePageDisplay() {
         int currentPageIdx = pdfPanel.getCurrentPageNumber(); // 0-basiert
         int totalPages = pdfPanel.getTotalPages();
@@ -461,49 +521,118 @@ public class ConfigurationDialog extends JDialog {
         updateModeSelection();
     }
 
-    /** Aktualisiert den Status der Radiobuttons und die Aktivierung abhängiger GUI-Elemente basierend auf dem Konfigurationsmodus. */
+    /**
+     * Aktualisiert den Status der Radiobuttons und die Aktivierung abhängiger GUI-Elemente basierend auf dem Konfigurationsmodus.
+     */
     private void updateModeSelection() {
-         boolean isPageSpecific = currentConfiguration.isUsePageSpecificAreas();
-         // Setze den richtigen Radiobutton
-         radioPageSpecific.setSelected(isPageSpecific);
-         radioGlobal.setSelected(!isPageSpecific);
+        boolean isPageSpecific = currentConfiguration.isUsePageSpecificAreas();
+        // Setze den richtigen Radiobutton
+        radioPageSpecific.setSelected(isPageSpecific);
+        radioGlobal.setSelected(!isPageSpecific);
 
-         // Aktiviere/Deaktiviere Elemente basierend darauf, ob ein PDF geladen ist
-         boolean pdfLoaded = (loadedPdfDoc != null);
-         pdfPanel.setEnabled(pdfLoaded); // Mausereignisse im Panel nur wenn PDF da
-         areaList.setEnabled(pdfLoaded); // Liste nur aktiv, wenn PDF da
-         btnRemoveArea.setEnabled(pdfLoaded && areaList.getSelectedIndex() != -1); // Löschen nur wenn PDF da UND was ausgewählt
+        // Aktiviere/Deaktiviere Elemente basierend darauf, ob ein PDF geladen ist
+        boolean pdfLoaded = (loadedPdfDoc != null);
+        pdfPanel.setEnabled(pdfLoaded); // Mausereignisse im Panel nur wenn PDF da
+        areaList.setEnabled(pdfLoaded); // Liste nur aktiv, wenn PDF da
+        btnRemoveArea.setEnabled(pdfLoaded && areaList.getSelectedIndex() != -1); // Löschen nur wenn PDF da UND was ausgewählt
 
-         // TODO: Hier könnte man spezifische Steuerelemente für den globalen Modus (de)aktivieren, falls hinzugefügt
+        // TODO: Hier könnte man spezifische Steuerelemente für den globalen Modus (de)aktivieren, falls hinzugefügt
     }
 
-    /** Wird aufgerufen, wenn der Benutzer den Modus (Seitenspezifisch/Global) ändert. */
-     private void updateMode() {
-         boolean usePageSpecific = radioPageSpecific.isSelected();
-         // Nur handeln, wenn sich der Modus tatsächlich geändert hat
-         if (currentConfiguration.isUsePageSpecificAreas() != usePageSpecific) {
-              log.info("Wechsle Konfigurationsmodus zu: {}", usePageSpecific ? "Seitenspezifisch" : "Global");
-              // 1. Speichere Bereiche der aktuellen Seite unter dem ALTEN Modus, falls ein PDF geladen ist
-              if (loadedPdfDoc != null) {
-                  saveAreasForCurrentPage(pdfPanel.getCurrentPageNumber());
-              }
-              // 2. Setze den NEUEN Modus in der Konfiguration
-              currentConfiguration.setUsePageSpecificAreas(usePageSpecific);
-              // 3. Lade die Bereiche für den NEUEN Modus für die aktuelle Seite (falls PDF geladen)
-              if (loadedPdfDoc != null) {
-                   loadAreasForCurrentPage();
-              }
-         }
-         // Stelle sicher, dass der Enabled-Status der GUI-Elemente korrekt ist
-         updateModeSelection();
+    /**
+     * Öffnet einen Dialog zur Auswahl einer bestehenden JSON-Konfigurationsdatei,
+     * lädt die darin enthaltenen Bereiche und zeigt sie im Panel für die aktuelle Seite an.
+     * ACHTUNG: Dies überschreibt die aktuell im Panel *gezeichneten* Bereiche,
+     * nicht notwendigerweise die 'currentConfiguration'-Instanzvariable komplett.
+     */
+    private void loadConfigAreasAction() {
+        // Prüfen, ob ein PDF im Panel geladen ist (optional, aber sinnvoll)
+        // if (loadedPdfDoc == null) { /* ... Meldung ... */ return; }
+
+        JFileChooser chooser = new JFileChooser();
+        Path configDir = configService.getAreaConfigDir();
+        if (configDir != null && Files.isDirectory(configDir)) {
+            chooser.setCurrentDirectory(configDir.toFile());
+        } else if (path2examples != null) {
+            chooser.setCurrentDirectory(new File(path2examples));
+        }
+
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON Konfigurationsdateien (*.json)", "json"));
+        chooser.setDialogTitle("Bereichs-Konfigurationsdatei zum Laden auswählen");
+        chooser.setMultiSelectionEnabled(false);
+
+        int result = chooser.showOpenDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = chooser.getSelectedFile();
+            String dateiname = selectedFile.getName();
+            String configNameToLoad = dateiname;
+            if (configNameToLoad.toLowerCase().endsWith(".json")) {
+                configNameToLoad = configNameToLoad.substring(0, configNameToLoad.length() - ".json".length());
+            }
+
+            log.info("Versuche Konfiguration '{}' zu laden...", configNameToLoad);
+            ExtractionConfiguration loadedConfig = configService.loadConfiguration(configNameToLoad);
+
+            if (loadedConfig != null) {
+                log.info("Konfiguration '{}' erfolgreich geladen. Ersetze aktuelle Bearbeitungskonfiguration.", configNameToLoad);
+
+                // *** ENTSCHEIDENDE ÄNDERUNG: Ersetze die currentConfiguration ***
+                this.currentConfiguration = loadedConfig;
+                // --------------------------------------------------------------
+
+                // Aktualisiere die UI-Felder, um die geladene Konfiguration widerzuspiegeln
+                txtConfigName.setText(this.currentConfiguration.getName());
+                updateModeSelection(); // Setzt Radiobuttons korrekt
+
+                // Lade und zeige die Bereiche für die AKTUELL angezeigte Seite aus der NEUEN Konfiguration
+                loadAreasForCurrentPage(); // Ruft jetzt getPageSpecificAreas auf der korrekten Instanz auf
+
+                JOptionPane.showMessageDialog(this,
+                        "Konfiguration '" + configNameToLoad + "' geladen und zur Bearbeitung übernommen.",
+                        "Konfiguration geladen", JOptionPane.INFORMATION_MESSAGE);
+
+            } else {
+                log.error("Konfiguration '{}' konnte nicht geladen werden.", configNameToLoad);
+                JOptionPane.showMessageDialog(this,
+                        "Fehler beim Laden der Konfigurationsdatei:\n'" + dateiname + "'",
+                        "Ladefehler", JOptionPane.ERROR_MESSAGE);
+            }
+        } else {
+            log.info("Auswahl der Konfigurationsdatei abgebrochen.");
+        }
+    }
+
+    /**
+     * Wird aufgerufen, wenn der Benutzer den Modus (Seitenspezifisch/Global) ändert.
+     */
+    private void updateMode() {
+        boolean usePageSpecific = radioPageSpecific.isSelected();
+        // Nur handeln, wenn sich der Modus tatsächlich geändert hat
+        if (currentConfiguration.isUsePageSpecificAreas() != usePageSpecific) {
+            log.info("Wechsle Konfigurationsmodus zu: {}", usePageSpecific ? "Seitenspezifisch" : "Global");
+            // 1. Speichere Bereiche der aktuellen Seite unter dem ALTEN Modus, falls ein PDF geladen ist
+            if (loadedPdfDoc != null) {
+                saveAreasForCurrentPage(pdfPanel.getCurrentPageNumber());
+            }
+            // 2. Setze den NEUEN Modus in der Konfiguration
+            currentConfiguration.setUsePageSpecificAreas(usePageSpecific);
+            // 3. Lade die Bereiche für den NEUEN Modus für die aktuelle Seite (falls PDF geladen)
+            if (loadedPdfDoc != null) {
+                loadAreasForCurrentPage();
+            }
+        }
+        // Stelle sicher, dass der Enabled-Status der GUI-Elemente korrekt ist
+        updateModeSelection();
     }
 
     /**
      * Gibt die Konfiguration zurück, die zuletzt erfolgreich gespeichert wurde.
      * Gibt null zurück, wenn der Dialog abgebrochen oder ohne Speichern geschlossen wurde.
+     *
      * @return Die gespeicherte ExtractionConfiguration oder null.
      */
     public ExtractionConfiguration getSavedConfiguration() {
         return savedConfiguration;
     }
+
 }
